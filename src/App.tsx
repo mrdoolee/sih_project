@@ -33,6 +33,7 @@ import { AllGroupsModal } from './components/AllGroupsModal';
 import { PrintableReportModal } from './components/PrintableReportModal';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { IndexSelectionScreen } from './components/IndexSelectionScreen';
+import { TeacherAuthModal } from './components/TeacherAuthModal';
 
 export default function App() {
   // Page Routing: 'teacher' (default index) or 'student' (accessed via distributed link ?mode=student or explicit button)
@@ -51,6 +52,19 @@ export default function App() {
     // Default entry (index) is Teacher Console
     return 'teacher';
   });
+
+  // Teacher Authentication Modal State (Required when entering teacher console from student view)
+  const [isTeacherAuthOpen, setIsTeacherAuthOpen] = useState<boolean>(false);
+
+  const handleOpenTeacherAuth = () => {
+    setIsTeacherAuthOpen(true);
+  };
+
+  const handleTeacherAuthSuccess = () => {
+    setIsTeacherAuthOpen(false);
+    setCurrentPage('teacher');
+    showToast('교사 관리 모드로 전환되었습니다.');
+  };
 
   // Topics, GAS Config & Teacher Settings
   const [topics, setTopics] = useState<TopicConfig[]>(() => getStoredTopics());
@@ -409,17 +423,25 @@ export default function App() {
   // 2. Initial Index Screen (Topic, Grade, Class, Group & Password Auth)
   if (!isAuthenticatedGroup) {
     return (
-      <IndexSelectionScreen
-        topics={topics}
-        selectedTopicId={selectedTopicId}
-        selectedGrade={selectedGrade}
-        selectedClass={selectedClass}
-        selectedGroup={selectedGroup}
-        teacherSettings={teacherSettings}
-        gasWebAppUrl={gasConfig.webAppUrl}
-        onEnterLab={handleEnterLab}
-        onOpenTeacherDashboard={() => setCurrentPage('teacher')}
-      />
+      <>
+        <IndexSelectionScreen
+          topics={topics}
+          selectedTopicId={selectedTopicId}
+          selectedGrade={selectedGrade}
+          selectedClass={selectedClass}
+          selectedGroup={selectedGroup}
+          teacherSettings={teacherSettings}
+          gasWebAppUrl={gasConfig.webAppUrl}
+          onEnterLab={handleEnterLab}
+          onOpenTeacherDashboard={handleOpenTeacherAuth}
+        />
+        <TeacherAuthModal
+          isOpen={isTeacherAuthOpen}
+          onClose={() => setIsTeacherAuthOpen(false)}
+          onSuccess={handleTeacherAuthSuccess}
+          teacherSettings={teacherSettings}
+        />
+      </>
     );
   }
 
@@ -466,7 +488,7 @@ export default function App() {
         onSwitchGroup={handleSwitchGroup}
         onSave={handleSaveData}
         onOpenAllGroups={() => setIsAllGroupsOpen(true)}
-        onOpenSettings={() => setCurrentPage('teacher')}
+        onOpenTeacherMode={handleOpenTeacherAuth}
         onOpenReportPrint={() => setIsPrintModalOpen(true)}
         onResetData={handleResetData}
         isSaving={isSaving}
@@ -552,6 +574,13 @@ export default function App() {
         topic={currentTopic}
         groupData={activeGroupData}
         trendResult={currentTrendResult}
+      />
+
+      <TeacherAuthModal
+        isOpen={isTeacherAuthOpen}
+        onClose={() => setIsTeacherAuthOpen(false)}
+        onSuccess={handleTeacherAuthSuccess}
+        teacherSettings={teacherSettings}
       />
     </div>
   );

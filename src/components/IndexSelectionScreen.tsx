@@ -179,12 +179,15 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
         </div>
 
         <button
+          type="button"
           id="btn-index-teacher-mode"
           onClick={onOpenTeacherDashboard}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-xl transition-all shadow-xs backdrop-blur-xs cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-300 bg-slate-800/90 hover:bg-slate-700 hover:text-white border border-slate-700 hover:border-indigo-500/50 rounded-xl transition-all shadow-xs backdrop-blur-xs cursor-pointer group"
+          title="교사용 관리 대시보드로 진입 (비밀번호 필요)"
         >
-          <Settings className="w-4 h-4 text-indigo-400" />
+          <Settings className="w-4 h-4 text-indigo-400 group-hover:rotate-45 transition-transform duration-200" />
           <span>교사 관리 모드</span>
+          <Lock className="w-3 h-3 text-slate-400 ml-0.5" />
         </button>
       </div>
 
