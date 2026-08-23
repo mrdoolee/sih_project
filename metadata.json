@@ -1,0 +1,6 @@
+{
+  "name": "Science Inquiry Lab Report Helper",
+  "description": "과학 실험 데이터 수집, 실시간 그래프 작성, 추세선 및 AI 기반 과학적 개념 도출, 구글 스프레드시트 모둠 데이터 통합 관리 웹앱",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
