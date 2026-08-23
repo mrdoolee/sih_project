@@ -35,9 +35,23 @@ import {
   FileText,
   Printer,
   Wand2,
-  Shuffle
+  Shuffle,
+  QrCode,
+  Share2,
+  FlaskConical,
+  LayoutGrid
 } from 'lucide-react';
-import { TopicConfig, GASConfig, TeacherSettingsConfig, TrendlineType, ReportQuestionConfig, GroupPasswordStore, getEffectiveReportQuestions, getDefaultReportQuestions } from '../types';
+import {
+  TopicConfig,
+  GASConfig,
+  TeacherSettingsConfig,
+  TrendlineType,
+  ReportQuestionConfig,
+  GroupPasswordStore,
+  GroupExperimentData,
+  getEffectiveReportQuestions,
+  getDefaultReportQuestions
+} from '../types';
 import {
   getGASCodeTemplate,
   fetchTeacherSettingsFromGAS,
@@ -45,15 +59,21 @@ import {
   fetchTopicsFromGAS,
   saveTopicsToGAS,
   getAllGroupPasswords,
+  saveStoredGroupPasswords,
   resetGroupPassword,
   fetchGroupPasswordsFromGAS,
   setGroupPassword,
   getGroupPasswordKey,
   saveAllGroupPasswordsToGAS,
   generateBulkGroupPasswords,
-  clearAllGroupPasswords
+  clearAllGroupPasswords,
+  getFlattenedAllGroupsData
 } from '../utils/gasService';
 import { GroupPasswordPrintModal } from './GroupPasswordPrintModal';
+import { ClassroomShareModal } from './ClassroomShareModal';
+import { ResultsEvaluationDashboard } from './ResultsEvaluationDashboard';
+import { AllGroupsOverviewDashboard } from './AllGroupsOverviewDashboard';
+import { StudentShareLayer } from './StudentShareLayer';
 
 interface TeacherDashboardProps {
   gasConfig: GASConfig;
@@ -65,6 +85,7 @@ interface TeacherDashboardProps {
   onSyncFromGAS: () => Promise<boolean>;
   isSyncing: boolean;
   onBackToStudent?: () => void;
+  allGroupsData?: GroupExperimentData[];
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
@@ -76,7 +97,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onSaveTeacherSettings,
   onSyncFromGAS,
   isSyncing,
-  onBackToStudent
+  onBackToStudent,
+  allGroupsData
 }) => {
   // Password lock state (session-persisted)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -95,10 +117,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [showChangePw, setShowChangePw] = useState(false);
   const [pwChangeStatus, setPwChangeStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'permissions' | 'gas' | 'topics' | 'passwords'>('permissions');
+  // Tab order:
+  // 기본 설정 메뉴: 1. GAS연동 ('gas'), 2. 기능제어/환경설정 ('permissions'), 3. 탐구주제/모둠관리 ('topics'), 4. 학생 배부 링크 & QR 생성 ('share')
+  // 탐구 결과 확인 메뉴: 5. 전체 모둠 탐구 결과 확인 ('all_groups'), 6. 모둠별 탐구 결과 확인 & 평가 ('evaluations')
+  const [activeTab, setActiveTab] = useState<'gas' | 'permissions' | 'topics' | 'share' | 'all_groups' | 'evaluations'>('gas');
+  const [topicsSubTab, setTopicsSubTab] = useState<'topicsList' | 'passwords'>('topicsList');
   const [webAppUrl, setWebAppUrl] = useState(gasConfig.webAppUrl);
   const [copiedCode, setCopiedCode] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
+
+  const isGasConnected = Boolean(gasConfig.webAppUrl && gasConfig.webAppUrl.trim().startsWith('http'));
 
   // Group Passwords Management state
   const [passwordsState, setPasswordsState] = useState<GroupPasswordStore>(() => getAllGroupPasswords());
@@ -118,6 +146,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Edit / Add Topic State
   const [editingTopic, setEditingTopic] = useState<TopicConfig | null>(null);
   const [isAddingTopic, setIsAddingTopic] = useState(false);
+
+  // Classroom QR & Link Share Modal
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const gasCode = getGASCodeTemplate();
 
@@ -242,17 +273,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
     onSaveTeacherSettings(updated);
 
-    // Also sync to GAS spreadsheet
-    if (gasConfig.webAppUrl) {
-      await saveTeacherSettingsToGAS(updated, gasConfig.webAppUrl);
-    }
-
     setCurrentPwInput('');
     setNewPwInput('');
     setConfirmPwInput('');
     setPwChangeStatus({
       type: 'success',
-      message: '비밀번호가 성공적으로 변경되었습니다! (스프레드시트 [환경설정] 동기화 완료)'
+      message: '교사 비밀번호가 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
     });
     setTimeout(() => setPwChangeStatus(null), 4000);
   };
@@ -280,87 +306,159 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTestStatus('연결 테스트 중...');
     const success = await onSyncFromGAS();
     if (success) {
-      // Also sync settings from GAS
-      await handleFetchSettingsFromSpreadsheet();
-      setTestStatus('✅ 구글 스프레드시트와 성공적으로 연결되었습니다!');
+      setTestStatus('✅ 구글 스프레드시트와 성공적으로 연결되었습니다! (수동 동기화 모드)');
     } else {
       setTestStatus('❌ 연결에 실패했습니다. Web App 배포 시 "액세스 권한: 모든 사용자"로 설정되었는지 확인하세요.');
     }
   };
 
-  const handleToggleClassOverview = async () => {
+  const [masterSyncFeedback, setMasterSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isSyncingMaster, setIsSyncingMaster] = useState<boolean>(false);
+
+  // Master: Fetch all from spreadsheet
+  const handleFetchAllMasterFromSpreadsheet = async () => {
+    if (!gasConfig.webAppUrl) {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. URL을 먼저 저장하세요.'
+      });
+      setTimeout(() => setMasterSyncFeedback(null), 4000);
+      return;
+    }
+    setIsSyncingMaster(true);
+    try {
+      let successCount = 0;
+      const fetchedSettings = await fetchTeacherSettingsFromGAS(gasConfig.webAppUrl);
+      if (fetchedSettings) {
+        onSaveTeacherSettings(fetchedSettings);
+        successCount++;
+      }
+      const fetchedTopics = await fetchTopicsFromGAS(gasConfig.webAppUrl);
+      if (fetchedTopics && fetchedTopics.length > 0) {
+        onSaveTopics(fetchedTopics);
+        successCount++;
+      }
+      const fetchedPasswords = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl);
+      if (fetchedPasswords) {
+        setPasswordsState(fetchedPasswords);
+        saveStoredGroupPasswords(fetchedPasswords);
+        successCount++;
+      }
+      if (onSyncFromGAS) {
+        await onSyncFromGAS();
+      }
+
+      setMasterSyncFeedback({
+        type: 'success',
+        message: `스프레드시트에서 모든 설정 및 데이터를 성공적으로 불러왔습니다! (${successCount}개 항목 동기화)`
+      });
+    } catch {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '스프레드시트에서 데이터를 불러오는 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setIsSyncingMaster(false);
+      setTimeout(() => setMasterSyncFeedback(null), 5000);
+    }
+  };
+
+  // Master: Push all to spreadsheet
+  const handlePushAllMasterToSpreadsheet = async () => {
+    if (!gasConfig.webAppUrl) {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. URL을 먼저 저장하세요.'
+      });
+      setTimeout(() => setMasterSyncFeedback(null), 4000);
+      return;
+    }
+    setIsSyncingMaster(true);
+    try {
+      await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl);
+      await saveTopicsToGAS(topics, gasConfig.webAppUrl);
+      await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl);
+
+      setMasterSyncFeedback({
+        type: 'success',
+        message: '현재 웹의 모든 설정(환경설정, 주제목록, 모둠비밀번호)을 스프레드시트에 성공적으로 내보냈습니다!'
+      });
+    } catch {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '스프레드시트로 내보내는 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setIsSyncingMaster(false);
+      setTimeout(() => setMasterSyncFeedback(null), 5000);
+    }
+  };
+
+  const handleToggleClassOverview = () => {
     const updated: TeacherSettingsConfig = {
       ...teacherSettings,
       allowClassOverview: !teacherSettings.allowClassOverview
     };
     onSaveTeacherSettings(updated);
-    if (gasConfig.webAppUrl) {
-      await saveTeacherSettingsToGAS(updated, gasConfig.webAppUrl);
-    }
+    setSyncFeedback({
+      type: 'success',
+      message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
+    });
+    setTimeout(() => setSyncFeedback(null), 4000);
   };
 
-  const handleToggleAutoAnalysis = async () => {
+  const handleToggleAutoAnalysis = () => {
     const updated: TeacherSettingsConfig = {
       ...teacherSettings,
       allowAutoAnalysis: !teacherSettings.allowAutoAnalysis
     };
     onSaveTeacherSettings(updated);
-    if (gasConfig.webAppUrl) {
-      await saveTeacherSettingsToGAS(updated, gasConfig.webAppUrl);
-    }
+    setSyncFeedback({
+      type: 'success',
+      message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
+    });
+    setTimeout(() => setSyncFeedback(null), 4000);
   };
 
-  const handleToggleRequireGroupPassword = async () => {
+  const handleToggleRequireGroupPassword = () => {
     const updated: TeacherSettingsConfig = {
       ...teacherSettings,
       requireGroupPassword: !teacherSettings.requireGroupPassword
     };
     onSaveTeacherSettings(updated);
-    if (gasConfig.webAppUrl) {
-      await saveTeacherSettingsToGAS(updated, gasConfig.webAppUrl);
-    }
+    setSyncFeedback({
+      type: 'success',
+      message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
+    });
+    setTimeout(() => setSyncFeedback(null), 4000);
   };
 
   // Bulk Generate Random Passwords for Current Selected Topic
-  const handleBulkGenerateRandomPasswords = async () => {
+  const handleBulkGenerateRandomPasswords = () => {
     const targetTopic = topics.find((t) => t.topicId === pwFilterTopic) || topics[0];
     if (!targetTopic) return;
 
     const updatedStore = generateBulkGroupPasswords(targetTopic, 'random');
     setPasswordsState({ ...updatedStore });
 
-    // If connected to GAS, push directly
-    if (gasConfig.webAppUrl) {
-      saveAllGroupPasswordsToGAS(updatedStore, gasConfig.webAppUrl).catch((err) => {
-        console.warn('Background GAS sync warning:', err);
-      });
-    }
-
     setPasswordFeedback({
       type: 'success',
-      message: `[${targetTopic.title}] 모든 모둠에 랜덤 4자리 비밀번호가 일괄 배정되었습니다!`
+      message: `[${targetTopic.title}] 모든 모둠에 랜덤 4자리 비밀번호가 일괄 배정되었습니다. 스프레드시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
   };
 
   // Bulk Generate Sequential Passwords (e.g. 1101, 1102) for Current Selected Topic
-  const handleBulkGenerateSequentialPasswords = async () => {
+  const handleBulkGenerateSequentialPasswords = () => {
     const targetTopic = topics.find((t) => t.topicId === pwFilterTopic) || topics[0];
     if (!targetTopic) return;
 
     const updatedStore = generateBulkGroupPasswords(targetTopic, 'sequential');
     setPasswordsState({ ...updatedStore });
 
-    // If connected to GAS, push directly
-    if (gasConfig.webAppUrl) {
-      saveAllGroupPasswordsToGAS(updatedStore, gasConfig.webAppUrl).catch((err) => {
-        console.warn('Background GAS sync warning:', err);
-      });
-    }
-
     setPasswordFeedback({
       type: 'success',
-      message: `[${targetTopic.title}] 모든 모둠에 규칙성 번호(학년반모둠순 e.g. 1101)가 일괄 배정되었습니다!`
+      message: `[${targetTopic.title}] 모든 모둠에 규칙성 번호(예: 1101...)가 일괄 배정되었습니다. 스프레드시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
   };
@@ -401,15 +499,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   // Clear All Group Passwords
-  const handleClearAllPasswords = async () => {
+  const handleClearAllPasswords = () => {
     clearAllGroupPasswords();
     setPasswordsState({});
-    if (gasConfig.webAppUrl) {
-      saveAllGroupPasswordsToGAS({}, gasConfig.webAppUrl).catch(() => {});
-    }
     setPasswordFeedback({
       type: 'success',
-      message: '모든 모둠 비밀번호가 초기화되었습니다.'
+      message: '모든 모둠 비밀번호가 로컬에서 초기화되었습니다. 스프레드시트에 반영하려면 [시트로 전체 내보내기] 버튼을 누르세요.'
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
   };
@@ -521,17 +616,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
-  const handleResetGroupPw = async (topicId: string, grade: string, classNum: string, groupName: string) => {
-    await resetGroupPassword(topicId, grade, classNum, groupName, gasConfig.webAppUrl);
+  const handleResetGroupPw = (topicId: string, grade: string, classNum: string, groupName: string) => {
+    resetGroupPassword(topicId, grade, classNum, groupName);
     setPasswordsState(getAllGroupPasswords());
     setPasswordFeedback({
       type: 'success',
-      message: `${grade} ${classNum} ${groupName}의 비밀번호가 초기화되었습니다.`
+      message: `${grade} ${classNum} ${groupName}의 비밀번호가 로컬에서 초기화되었습니다. 시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
   };
 
-  const handleSaveGroupPw = async (topicId: string, grade: string, classNum: string, groupName: string, newPw: string) => {
+  const handleSaveGroupPw = (topicId: string, grade: string, classNum: string, groupName: string, newPw: string) => {
     if (!newPw || newPw.trim().length < 2) {
       setPasswordFeedback({
         type: 'error',
@@ -540,23 +635,25 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setTimeout(() => setPasswordFeedback(null), 3000);
       return;
     }
-    await setGroupPassword(topicId, grade, classNum, groupName, newPw.trim(), gasConfig.webAppUrl);
+    setGroupPassword(topicId, grade, classNum, groupName, newPw.trim());
     setPasswordsState(getAllGroupPasswords());
     setEditingGroupPw(null);
     setPasswordFeedback({
       type: 'success',
-      message: `${grade} ${classNum} ${groupName}의 비밀번호가 [${newPw.trim()}]로 설정되었습니다.`
+      message: `${grade} ${classNum} ${groupName}의 비밀번호가 [${newPw.trim()}]로 설정되었습니다. 시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
   };
 
-  const handleDeleteTopic = async (topicId: string) => {
+  const handleDeleteTopic = (topicId: string) => {
     if (topics.length <= 1) return;
     const updated = topics.filter((t) => t.topicId !== topicId);
     onSaveTopics(updated);
-    if (gasConfig.webAppUrl) {
-      await saveTopicsToGAS(updated, gasConfig.webAppUrl);
-    }
+    setTopicSyncFeedback({
+      type: 'success',
+      message: '주제가 로컬에서 삭제되었습니다. 스프레드시트에 반영하려면 [시트로 내보내기] 버튼을 누르세요.'
+    });
+    setTimeout(() => setTopicSyncFeedback(null), 4000);
   };
 
   const handleStartAdd = () => {
@@ -586,7 +683,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setIsAddingTopic(true);
   };
 
-  const handleSaveEditingTopic = async (e: React.FormEvent) => {
+  const handleSaveEditingTopic = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTopic) return;
 
@@ -597,9 +694,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       updatedList = topics.map((t) => (t.topicId === editingTopic.topicId ? editingTopic : t));
     }
     onSaveTopics(updatedList);
-    if (gasConfig.webAppUrl) {
-      await saveTopicsToGAS(updatedList, gasConfig.webAppUrl);
-    }
+    setTopicSyncFeedback({
+      type: 'success',
+      message: `주제 [${editingTopic.title}]가 로컬에 저장되었습니다. 스프레드시트 [환경설정_주제목록] 시트에도 반영하려면 [시트로 내보내기] 버튼을 누르세요.`
+    });
+    setTimeout(() => setTopicSyncFeedback(null), 4000);
     setEditingTopic(null);
     setIsAddingTopic(false);
   };
@@ -739,121 +838,394 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // 2. UNLOCKED VIEW: Full Teacher Dashboard
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
-      {/* Top Teacher Header Bar */}
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Settings className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-white tracking-tight">
-                  교사용 통합 관리 콘솔 (Teacher Dashboard)
-                </h1>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/30 text-indigo-300 border border-indigo-400/30">
-                  교사 인증됨
-                </span>
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
+      {/* Left Navigation Sidebar (Desktop / Tablet) - Fixed / Sticky without scrolling page */}
+      <aside className="w-full md:w-64 lg:w-72 bg-slate-900 text-white flex flex-col shrink-0 border-r border-slate-800 shadow-xl md:sticky md:top-0 md:h-screen md:overflow-y-auto justify-between">
+        {/* Top Brand Header */}
+        <div>
+          <div className="p-4 sm:p-5 border-b border-slate-800 bg-slate-950/70">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/30 shrink-0">
+                <FlaskConical className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-400">
-                학생 화면 기능 제한(On/Off) · 구글 스프레드시트(GAS) 연동 · 비밀번호 관리 · 탐구 주제 관리
-              </p>
+              <div className="min-w-0 leading-tight">
+                <h1 className="text-xs sm:text-sm font-black text-white tracking-tight">
+                  과학 탐구 활동
+                </h1>
+                <h2 className="text-[11px] font-bold text-indigo-400">
+                  보고서 작성 도우미
+                </h2>
+                <p className="text-[10px] text-slate-400 truncate mt-1">
+                  {isGasConnected ? '🟢 스프레드시트 연동됨' : '🔴 GAS 연동 필요 (비활성)'}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              id="btn-teacher-logout"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl border border-slate-700 transition-all cursor-pointer"
-              title="관리 콘솔을 다시 잠급니다."
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>잠금</span>
-            </button>
+          {/* Nav Menu Items (1. GAS, 2. Permissions, 3. Topics, Section: Exploration Results -> 4. All Groups, 5. Group Evaluation) */}
+          <nav className="p-3 space-y-1.5 overflow-y-auto">
+            <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              기본 설정 메뉴
+            </div>
 
-            <button
-              type="button"
-              id="btn-back-to-student"
-              onClick={handleGoToStudent}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>👨‍🎓 학생 화면으로 돌아가기</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="bg-slate-800/90 border-t border-slate-700/60 px-4 sm:px-6">
-          <div className="max-w-6xl mx-auto flex items-center gap-2 py-2 overflow-x-auto">
-            <button
-              type="button"
-              id="tab-permissions"
-              onClick={() => setActiveTab('permissions')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === 'permissions'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>🎓 학생 기능 제어 & 환경설정</span>
-            </button>
-
+            {/* 1. GAS 연동 */}
             <button
               type="button"
               id="tab-gas"
               onClick={() => setActiveTab('gas')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
                 activeTab === 'gas'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>📊 구글 시트 (GAS) 연동 설정</span>
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'gas' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-blue-400'}`}>
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold">1. GAS 연동</div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'gas' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  스프레드시트 Web App 설정
+                </div>
+              </div>
             </button>
 
+            {/* 2. 기능제어/환경설정 */}
+            <button
+              type="button"
+              id="tab-permissions"
+              disabled={!isGasConnected}
+              onClick={() => setActiveTab('permissions')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                !isGasConnected
+                  ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
+                  : activeTab === 'permissions'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 cursor-pointer'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer'
+              }`}
+              title={!isGasConnected ? 'GAS URL 연동 후 활성화됩니다.' : ''}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'permissions' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-emerald-400'}`}>
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold flex items-center justify-between">
+                  <span>2. 기능제어 / 환경설정</span>
+                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                </div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'permissions' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  학생 기능 On/Off & 비밀번호
+                </div>
+              </div>
+            </button>
+
+            {/* 3. 탐구주제/모둠관리 */}
             <button
               type="button"
               id="tab-topics"
+              disabled={!isGasConnected}
               onClick={() => setActiveTab('topics')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === 'topics'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                !isGasConnected
+                  ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
+                  : activeTab === 'topics'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 cursor-pointer'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer'
               }`}
+              title={!isGasConnected ? 'GAS URL 연동 후 활성화됩니다.' : ''}
             >
-              <Layers className="w-4 h-4" />
-              <span>🧪 탐구 주제 & 모둠 관리</span>
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'topics' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-amber-400'}`}>
+                <Layers className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold flex items-center justify-between">
+                  <span>3. 탐구주제 / 모둠관리</span>
+                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                </div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'topics' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  주제 설정 & 모둠 비밀번호
+                </div>
+              </div>
             </button>
 
+            {/* 4. 학생 배부 링크 & QR 생성 (NEW PAGE VIEW) */}
             <button
               type="button"
-              id="tab-passwords"
-              onClick={() => setActiveTab('passwords')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === 'passwords'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+              id="tab-share"
+              disabled={!isGasConnected}
+              onClick={() => setActiveTab('share')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                !isGasConnected
+                  ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
+                  : activeTab === 'share'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 cursor-pointer'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer'
               }`}
+              title={!isGasConnected ? 'GAS URL 연동 후 활성화됩니다.' : ''}
             >
-              <KeyRound className="w-4 h-4" />
-              <span>🔒 모둠 비밀번호 관리</span>
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'share' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                <QrCode className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold flex items-center justify-between">
+                  <span>4. 학생 배부 링크 & QR</span>
+                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                </div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'share' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  교실 대형QR·접속 링크 안내
+                </div>
+              </div>
             </button>
-          </div>
+
+            {/* Section Divider & Grid Header for Exploration Results */}
+            <div className="pt-3 pb-1 px-1">
+              <div className="rounded-lg bg-indigo-950/70 border border-indigo-800/40 px-2.5 py-1.5 flex items-center gap-2">
+                <LayoutGrid className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="text-[11px] font-extrabold text-indigo-200 uppercase tracking-wide">
+                  탐구 결과 확인 메뉴
+                </span>
+              </div>
+            </div>
+
+            {/* 5. 전체 모둠 탐구 결과 확인 */}
+            <button
+              type="button"
+              id="tab-all-groups"
+              disabled={!isGasConnected}
+              onClick={() => setActiveTab('all_groups')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                !isGasConnected
+                  ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
+                  : activeTab === 'all_groups'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 cursor-pointer'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer'
+              }`}
+              title={!isGasConnected ? 'GAS URL 연동 후 활성화됩니다.' : ''}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'all_groups' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-teal-400'}`}>
+                <Table className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold flex items-center justify-between">
+                  <span>5. 전체 모둠 탐구 결과 확인</span>
+                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                </div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'all_groups' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  학급 전체 데이터 테이블·비교
+                </div>
+              </div>
+            </button>
+
+            {/* 6. 모둠별 탐구 결과 확인 & 평가 */}
+            <button
+              type="button"
+              id="tab-evaluations"
+              disabled={!isGasConnected}
+              onClick={() => setActiveTab('evaluations')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                !isGasConnected
+                  ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
+                  : activeTab === 'evaluations'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 cursor-pointer'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer'
+              }`}
+              title={!isGasConnected ? 'GAS URL 연동 후 활성화됩니다.' : ''}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeTab === 'evaluations' ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-cyan-400'}`}>
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-bold flex items-center justify-between">
+                  <span>6. 모둠별 탐구 결과 확인 & 평가</span>
+                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                </div>
+                <div className={`text-[10px] font-normal truncate ${activeTab === 'evaluations' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                  개별 모둠 측정·서술·5대루브릭
+                </div>
+              </div>
+            </button>
+          </nav>
         </div>
-      </header>
+
+        {/* Sidebar Bottom Action Buttons */}
+        <div className="p-3 border-t border-slate-800 space-y-2 bg-slate-950/60">
+          <button
+            type="button"
+            id="btn-sidebar-to-student"
+            onClick={handleGoToStudent}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 shadow-xs transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>학생 화면으로 이동</span>
+          </button>
+        </div>
+      </aside>
 
       {/* Main Content Area */}
-      <main className="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-100 overflow-y-auto">
+        {/* Top Header Bar (Fixed / Sticky Header with Page Sync Buttons) */}
+        <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between sticky top-0 z-30 shadow-xs gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+              {activeTab === 'gas' && '1. GAS 연동'}
+              {activeTab === 'permissions' && '2. 기능제어 / 환경설정'}
+              {activeTab === 'topics' && '3. 탐구주제 / 모둠관리'}
+              {activeTab === 'share' && '4. 학생 배부 링크 & QR'}
+              {activeTab === 'all_groups' && '5. 전체 모둠 탐구 결과 확인'}
+              {activeTab === 'evaluations' && '6. 모둠별 탐구 결과 확인 & 평가'}
+            </span>
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate">
+              {activeTab === 'gas' && '구글 스프레드시트 Web App 설정 및 연동'}
+              {activeTab === 'permissions' && '학생 기능 제어 및 교사 비밀번호 관리'}
+              {activeTab === 'topics' && '과학 탐구 주제 편집 & 모둠 비밀번호 관리'}
+              {activeTab === 'share' && '교실 송출용 대형 QR코드 및 학생 배부 링크 생성'}
+              {activeTab === 'all_groups' && '학급 전체 모둠 측정 데이터 일람표 및 경향성 비교'}
+              {activeTab === 'evaluations' && '개별 모둠 탐구 결과 확인, 5대 루브릭 채점 및 피드백'}
+            </h2>
+          </div>
+
+          {/* Sticky Header Action Buttons (Contextual Sync/Save Buttons) */}
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            {/* Tab 1: GAS - Master Sync Buttons */}
+            {activeTab === 'gas' && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleFetchAllMasterFromSpreadsheet}
+                  disabled={isSyncingMaster || !gasConfig.webAppUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                  title="스프레드시트에서 모든 설정 및 데이터를 불러옵니다."
+                >
+                  <DownloadCloud className={`w-3.5 h-3.5 ${isSyncingMaster ? 'animate-bounce text-blue-600' : ''}`} />
+                  <span>시트에서 전체 불러오기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePushAllMasterToSpreadsheet}
+                  disabled={isSyncingMaster || !gasConfig.webAppUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                  title="현재 웹의 모든 설정을 스프레드시트로 내보냅니다."
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>시트로 전체 내보내기</span>
+                </button>
+              </div>
+            )}
+
+            {/* Tab 2: Permissions - Settings Sync Buttons */}
+            {activeTab === 'permissions' && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleFetchSettingsFromSpreadsheet}
+                  disabled={isSyncingSettings || !gasConfig.webAppUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                  title="스프레드시트 [환경설정] 탭의 최신 설정을 불러옵니다."
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSettings ? 'animate-spin text-blue-600' : ''}`} />
+                  <span>시트에서 불러오기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePushSettingsToSpreadsheet()}
+                  disabled={isSyncingSettings || !gasConfig.webAppUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                  title="현재 설정을 스프레드시트 [환경설정] 탭으로 내보냅니다."
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>시트로 내보내기</span>
+                </button>
+              </div>
+            )}
+
+            {/* Tab 3: Topics List / Passwords Sync Buttons */}
+            {activeTab === 'topics' && (
+              <div className="flex items-center gap-1.5">
+                {topicsSubTab === 'topicsList' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleFetchTopicsFromSpreadsheet}
+                      disabled={isSyncingTopics || !gasConfig.webAppUrl}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                      title="스프레드시트 [환경설정_주제목록] 탭에서 주제 목록을 불러옵니다."
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingTopics ? 'animate-spin text-indigo-600' : ''}`} />
+                      <span>주제 불러오기</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePushTopicsToSpreadsheet}
+                      disabled={isSyncingTopics || !gasConfig.webAppUrl}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                      title="현재 주제 목록을 스프레드시트 [환경설정_주제목록] 탭으로 내보냅니다."
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>주제 내보내기</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleFetchPasswordsFromSpreadsheet}
+                      disabled={isSyncingPasswords || !gasConfig.webAppUrl}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                      title="스프레드시트 [환경설정_모둠비밀번호] 탭에서 비밀번호를 불러옵니다."
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPasswords ? 'animate-spin text-amber-600' : ''}`} />
+                      <span>비번 불러오기</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePushAllPasswordsToSpreadsheet}
+                      disabled={isSyncingPasswords || !gasConfig.webAppUrl}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                      title="현재 비밀번호 목록을 스프레드시트 [환경설정_모둠비밀번호] 탭으로 내보냅니다."
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>비번 내보내기</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Tab 5 (All Groups) & Tab 6 (Evaluations) Data Reload */}
+            {(activeTab === 'all_groups' || activeTab === 'evaluations') && onSyncFromGAS && (
+              <button
+                type="button"
+                onClick={onSyncFromGAS}
+                disabled={isSyncing || !gasConfig.webAppUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                title="스프레드시트에서 최신 학생 측정/평가 데이터를 새로고침합니다."
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>데이터 새로고침</span>
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* GAS Disconnected Banner Alert */}
+        {!isGasConnected && (
+          <div className="mx-4 sm:mx-6 mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-amber-800">구글 Apps Script(GAS) Web App 연동이 필요합니다.</p>
+              <p className="text-amber-700">
+                [1. GAS 연동] 탭에서 구글 스프레드시트 Web App URL을 입력하고 연동을 완료해야 나머지 관리 및 탐구 결과 확인 탭이 활성화됩니다.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Content Container */}
+        <div className="p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6 flex-1">
         {/* TAB 1: PERMISSIONS & FEATURE TOGGLES & PASSWORD MANAGEMENT */}
         {activeTab === 'permissions' && (
           <div className="space-y-6">
-            {/* Intro & Real-time GAS Sync Action Bar */}
+            {/* Intro Header Card */}
             <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -864,33 +1236,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </h2>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-600">
-                    학생 화면 기능 On/Off 및 교사 비밀번호는 웹페이지와 구글 스프레드시트 <strong>[환경설정]</strong> 탭 양쪽에서 모두 변경 및 실시간 동기화할 수 있습니다.
+                    학생 화면 기능 On/Off 및 교사 비밀번호는 웹페이지와 구글 스프레드시트 <strong>[환경설정]</strong> 탭에서 관리할 수 있습니다. 상단 헤더의 [시트에서 불러오기] / [시트로 내보내기] 버튼을 통해 안전하게 수동 동기화됩니다.
                   </p>
-                </div>
-
-                {/* Direct Sync Buttons */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleFetchSettingsFromSpreadsheet}
-                    disabled={isSyncingSettings || !gasConfig.webAppUrl}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
-                    title="구글 스프레드시트 [환경설정] 탭의 최신 설정을 불러옵니다."
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSettings ? 'animate-spin text-blue-600' : ''}`} />
-                    <span>시트에서 불러오기</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePushSettingsToSpreadsheet()}
-                    disabled={isSyncingSettings || !gasConfig.webAppUrl}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
-                    title="현재 웹 화면의 설정을 구글 스프레드시트 [환경설정] 탭으로 내보냅니다."
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>시트로 내보내기</span>
-                  </button>
                 </div>
               </div>
 
@@ -1264,6 +1611,64 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {testStatus}
                 </p>
               )}
+
+              {/* Quick Share to Students Banner */}
+              <div className="mt-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-indigo-950 flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-indigo-600" />
+                    <span>학생 배부용 원클릭 링크 & 교실용 대형 QR코드</span>
+                  </h4>
+                  <p className="text-xs text-indigo-800">
+                    학생 기기에 웹 앱 URL을 직접 입력할 필요 없이, 좌측 메뉴의 <strong>[4. 학생 배부 링크 & QR]</strong>에서 QR코드 또는 공유 링크를 복사하여 학생들에게 배부할 수 있습니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('share')}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shrink-0 shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>4. 학생 배부 메뉴로 이동</span>
+                </button>
+              </div>
+
+              {/* Master Manual Data Synchronization Panel */}
+              <div className="mt-4 p-4 sm:p-5 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-md space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-5 h-5 text-indigo-400" />
+                      <h4 className="text-sm font-bold text-white">
+                        수동 데이터 일괄 동기화 (Master Sync)
+                      </h4>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        데이터 유실 방지 안전 모드
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      상단 고정 헤더의 <strong>[시트에서 전체 불러오기] / [시트로 전체 내보내기]</strong> 버튼을 통해 전체 설정을 안전하게 동기화할 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+
+                {masterSyncFeedback && (
+                  <div
+                    className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      masterSyncFeedback.type === 'success'
+                        ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-700'
+                        : 'bg-rose-950/80 text-rose-200 border border-rose-700'
+                    }`}
+                  >
+                    {masterSyncFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    )}
+                    <span>{masterSyncFeedback.message}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Step-by-step Setup Guide */}
@@ -1314,6 +1719,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* TAB 3: TOPICS & GROUPS MANAGEMENT */}
         {activeTab === 'topics' && (
           <div className="space-y-6">
+            {/* Sub Tabs Navigation: 1. 탐구 주제 관리 / 2. 모둠별 비밀번호 관리 */}
+            <div className="flex items-center gap-2 p-1 bg-white border border-slate-200 rounded-2xl shadow-2xs">
+              <button
+                type="button"
+                id="btn-subtab-topics-list"
+                onClick={() => setTopicsSubTab('topicsList')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  topicsSubTab === 'topicsList'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span>🧪 탐구 주제 관리 & 질문지 문항 설정 ({topics.length}개 주제)</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-subtab-passwords"
+                onClick={() => setTopicsSubTab('passwords')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  topicsSubTab === 'passwords'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>🔒 모둠별 비밀번호 관리 & 인쇄 배부</span>
+              </button>
+            </div>
+
+            {topicsSubTab === 'topicsList' && (
+              <div className="space-y-6">
             {/* 1. Header & Direct Sync Action Bar */}
             <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1325,7 +1763,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </h2>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-600">
-                    탐구 주제, 모둠 목록, X·Y축 변인 및 단위, 탐구 질문은 웹 화면과 구글 스프레드시트 <strong>[환경설정_주제목록]</strong> 탭 양쪽에서 양방향으로 실시간 동기화됩니다.
+                    탐구 주제, 모둠 목록, X·Y축 변인 및 단위, 탐구 질문을 설정합니다. 상단 고정 헤더의 <strong>[주제 불러오기] / [주제 내보내기]</strong> 버튼으로 안전하게 수동 동기화할 수 있습니다.
                   </p>
                 </div>
 
@@ -1340,28 +1778,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <BookOpen className="w-3.5 h-3.5 text-slate-600" />
                     <span>{showTopicGuide ? '연동 설명 접기' : '연동 설명 보기'}</span>
                     {showTopicGuide ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleFetchTopicsFromSpreadsheet}
-                    disabled={isSyncingTopics || !gasConfig.webAppUrl}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
-                    title="구글 스프레드시트 [환경설정_주제목록] 탭의 최신 주제를 불러옵니다."
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingTopics ? 'animate-spin text-indigo-600' : ''}`} />
-                    <span>시트에서 불러오기</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePushTopicsToSpreadsheet}
-                    disabled={isSyncingTopics || !gasConfig.webAppUrl}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
-                    title="현재 웹 화면의 모든 주제를 구글 스프레드시트 [환경설정_주제목록] 탭으로 내보냅니다."
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>시트로 내보내기</span>
                   </button>
 
                   {!editingTopic && (
@@ -2090,17 +2506,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         <Wand2 className="w-3.5 h-3.5 text-amber-600" />
                         <span>규칙성 번호 배정 (1101...)</span>
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={handlePushAllPasswordsToSpreadsheet}
-                        disabled={isSyncingPasswords}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                        title="스프레드시트 [환경설정_모둠비밀번호] 탭에 전체 저장"
-                      >
-                        <UploadCloud className="w-3.5 h-3.5" />
-                        <span>시트로 저장</span>
-                      </button>
                     </div>
                   </div>
 
@@ -2147,7 +2552,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => setActiveTab('passwords')}
+                      onClick={() => setTopicsSubTab('passwords')}
                       className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
                     >
                       전체 모둠 비밀번호 관리 탭으로 이동 ➔
@@ -2247,11 +2652,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 4: GROUP PASSWORDS MANAGEMENT */}
-        {activeTab === 'passwords' && (
-          <div className="space-y-6">
-            {/* Global ON/OFF Toggle Banner */}
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+        {/* TAB 3 SUBTAB 2: GROUP PASSWORDS MANAGEMENT */}
+        {topicsSubTab === 'passwords' && (
+              <div className="space-y-6">
+                {/* Global ON/OFF Toggle Banner */}
+                <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-xs ${
@@ -2350,28 +2755,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handlePushAllPasswordsToSpreadsheet}
-                    disabled={isSyncingPasswords}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                    title="현재 설정된 비밀번호를 구글 시트 [환경설정_모둠비밀번호] 탭에 전체 동기화"
-                  >
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    <span>시트로 전체 내보내기</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleFetchPasswordsFromSpreadsheet}
-                    disabled={isSyncingPasswords}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
-                    title="구글 시트 [환경설정_모둠비밀번호] 탭에서 불러오기"
-                  >
-                    <DownloadCloud className={`w-3.5 h-3.5 ${isSyncingPasswords ? 'animate-bounce' : ''}`} />
-                    <span>시트에서 불러오기</span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={handleClearAllPasswords}
@@ -2563,8 +2946,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           </div>
         )}
+      </div>
+    )}
 
-        {/* Global Edit Group Password Modal */}
+        {/* TAB 4: STUDENT SHARE & QR LAYER */}
+        {activeTab === 'share' && (
+          <StudentShareLayer
+            gasWebAppUrl={gasConfig.webAppUrl}
+            topics={topics}
+            initialTopicId={pwFilterTopic}
+          />
+        )}
+
+        {/* TAB 5: ALL GROUPS OVERVIEW DASHBOARD */}
+        {activeTab === 'all_groups' && (
+          <AllGroupsOverviewDashboard
+            topics={topics}
+            allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
+            gasWebAppUrl={gasConfig.webAppUrl}
+            onRefreshData={onSyncFromGAS}
+            isLoading={isSyncing}
+          />
+        )}
+
+        {/* TAB 6: RESULTS EVALUATION & RUBRIC DASHBOARD */}
+        {activeTab === 'evaluations' && (
+          <ResultsEvaluationDashboard
+            topics={topics}
+            allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
+            gasWebAppUrl={gasConfig.webAppUrl}
+            onRefreshData={onSyncFromGAS}
+            isLoading={isSyncing}
+          />
+        )}
+      </div>
+
+      {/* Global Edit Group Password Modal */}
         {editingGroupPw && (
           <div
             className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
@@ -2637,6 +3054,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           initialTopicId={pwFilterTopic}
           currentTopicId={pwFilterTopic}
           passwords={passwordsState}
+        />
+
+        {/* Global Classroom QR & Share Modal */}
+        <ClassroomShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          gasWebAppUrl={gasConfig.webAppUrl}
+          topics={topics}
+          currentTopicId={pwFilterTopic}
         />
       </main>
     </div>

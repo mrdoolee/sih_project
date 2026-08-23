@@ -5,6 +5,7 @@ import {
   TeacherSettingsConfig,
   ReportQuestionConfig,
   GroupPasswordStore,
+  GroupEvaluation,
   getDefaultReportQuestions
 } from '../types';
 import { DEFAULT_TOPICS, SAMPLE_ALL_GROUPS_DATA } from '../data/defaultTopics';
@@ -14,6 +15,7 @@ const LOCAL_TOPICS_KEY = 'science_lab_topics';
 const LOCAL_EXPERIMENT_DATA_KEY = 'science_lab_experiment_data';
 const TEACHER_SETTINGS_KEY = 'science_lab_teacher_settings';
 const GROUP_PASSWORDS_KEY = 'science_lab_group_passwords';
+const GROUP_EVALUATIONS_KEY = 'science_lab_group_evaluations';
 
 export const DEFAULT_TEACHER_SETTINGS: TeacherSettingsConfig = {
   teacherPassword: '0000',
@@ -213,6 +215,19 @@ export function saveStoredAllGroupData(dataMap: Record<string, GroupExperimentDa
   localStorage.setItem(LOCAL_EXPERIMENT_DATA_KEY, JSON.stringify(dataMap));
 }
 
+export function getFlattenedAllGroupsData(): GroupExperimentData[] {
+  const store = getStoredAllGroupData();
+  const all: GroupExperimentData[] = [];
+  Object.values(store).forEach((list) => {
+    if (Array.isArray(list)) {
+      list.forEach((item) => {
+        all.push(item);
+      });
+    }
+  });
+  return all;
+}
+
 // Key helper for indexing
 export function getGroupDataKey(topicId: string, grade: string, classNum: string): string {
   return `${topicId}-${grade}-${classNum}`;
@@ -235,6 +250,94 @@ export function getStoredGroupPasswords(): GroupPasswordStore {
 }
 
 export const getAllGroupPasswords = getStoredGroupPasswords;
+
+export function getEvaluationKey(topicId: string, grade: string, classNum: string, groupName: string): string {
+  return `${topicId}__${grade}__${classNum}__${groupName}`;
+}
+
+export function getStoredEvaluations(): Record<string, GroupEvaluation> {
+  const saved = localStorage.getItem(GROUP_EVALUATIONS_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+  }
+  return {};
+}
+
+export function getStoredEvaluation(
+  topicId: string,
+  grade: string,
+  classNum: string,
+  groupName: string
+): GroupEvaluation | null {
+  const all = getStoredEvaluations();
+  const key = getEvaluationKey(topicId, grade, classNum, groupName);
+  return all[key] || null;
+}
+
+export function saveStoredEvaluation(evaluation: GroupEvaluation): void {
+  const all = getStoredEvaluations();
+  const key = getEvaluationKey(evaluation.topicId, evaluation.grade, evaluation.classNum, evaluation.groupName);
+  all[key] = {
+    ...evaluation,
+    evaluatedAt: evaluation.evaluatedAt || new Date().toLocaleString('ko-KR')
+  };
+  localStorage.setItem(GROUP_EVALUATIONS_KEY, JSON.stringify(all));
+  window.dispatchEvent(new CustomEvent('science_lab_evaluations_updated', { detail: all }));
+}
+
+export async function saveEvaluationToGAS(
+  evaluation: GroupEvaluation,
+  webAppUrl?: string
+): Promise<{ success: boolean; message: string }> {
+  saveStoredEvaluation(evaluation);
+
+  if (webAppUrl && webAppUrl.startsWith('http')) {
+    try {
+      const response = await fetch(webAppUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveEvaluation',
+          payload: evaluation
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return { success: true, message: '평가 및 피드백이 구글 스프레드시트 [평가_피드백] 탭에 성공적으로 저장되었습니다.' };
+    } catch (e) {
+      console.warn('Failed to sync evaluation to GAS:', e);
+      return { success: true, message: '로컬 브라우저에 저장되었습니다 (구글 시트 전송 대기).' };
+    }
+  }
+  return { success: true, message: '평가 및 피드백이 브라우저에 저장되었습니다.' };
+}
+
+export async function fetchEvaluationsFromGAS(webAppUrl: string): Promise<Record<string, GroupEvaluation> | null> {
+  if (!webAppUrl || !webAppUrl.startsWith('http')) return null;
+  try {
+    const url = new URL(webAppUrl);
+    url.searchParams.set('action', 'getEvaluations');
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.status === 'success' && data.evaluations) {
+      const current = getStoredEvaluations();
+      const merged = { ...current, ...data.evaluations };
+      localStorage.setItem(GROUP_EVALUATIONS_KEY, JSON.stringify(merged));
+      return merged;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to fetch evaluations from GAS:', err);
+    return null;
+  }
+}
 
 export function saveStoredGroupPasswords(store: GroupPasswordStore): void {
   localStorage.setItem(GROUP_PASSWORDS_KEY, JSON.stringify(store));
@@ -414,8 +517,10 @@ export async function fetchTeacherSettingsFromGAS(webAppUrl: string): Promise<Te
     const data = await response.json();
     if (data.status === 'success' && data.settings) {
       const current = getStoredTeacherSettings();
+      let rawTeacherPw = data.settings.teacherPassword !== undefined ? String(data.settings.teacherPassword).trim() : current.teacherPassword;
+      if (rawTeacherPw === '0') rawTeacherPw = '0000';
       const updated: TeacherSettingsConfig = {
-        teacherPassword: data.settings.teacherPassword !== undefined ? String(data.settings.teacherPassword) : current.teacherPassword,
+        teacherPassword: rawTeacherPw || '0000',
         allowClassOverview: data.settings.allowClassOverview !== undefined ? Boolean(data.settings.allowClassOverview) : current.allowClassOverview,
         allowAutoAnalysis: data.settings.allowAutoAnalysis !== undefined ? Boolean(data.settings.allowAutoAnalysis) : current.allowAutoAnalysis,
         requireGroupPassword: data.settings.requireGroupPassword !== undefined ? Boolean(data.settings.requireGroupPassword) : current.requireGroupPassword
@@ -645,6 +750,7 @@ const SHEET_CONFIG_NAME = '환경설정';
 const SHEET_SETTINGS_NAME = '환경설정_주제목록';
 const SHEET_PASSWORDS_NAME = '환경설정_모둠비밀번호';
 const SHEET_DATA_NAME = '통합_실험데이터';
+const SHEET_EVALUATIONS_NAME = '평가_피드백';
 
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'getTopics';
@@ -666,7 +772,9 @@ function doGet(e) {
       const key = String(values[i][0]).trim();
       const val = values[i][1];
       if (key === '교사_비밀번호' || key === 'teacherPassword') {
-        settings.teacherPassword = String(val);
+        let pwStr = String(val !== undefined && val !== null ? val : '0000').trim();
+        if (pwStr === '0') pwStr = '0000';
+        settings.teacherPassword = pwStr;
       } else if (key === '전체_모둠_데이터_확인_허용' || key === 'allowClassOverview') {
         settings.allowClassOverview = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
       } else if (key === '컴퓨터_자동_분석_그래프_허용' || key === 'allowAutoAnalysis') {
@@ -760,10 +868,21 @@ function doGet(e) {
       if (row[1] == topicId && row[2] == grade && row[3] == classNum) {
         const groupName = String(row[4]);
         if (!groupMap[groupName]) {
-          const answersMap = {};
-          if (row[10]) answersMap['q1'] = String(row[10]);
-          if (row[11]) answersMap['q2'] = String(row[11]);
-          if (row[12]) answersMap['q3'] = String(row[12]);
+          let answersMap = {};
+          // 1. N열(row[13])에 전체 문항이 JSON으로 저장되어 있는 경우 전체 파싱
+          if (row[13]) {
+            try {
+              const parsed = typeof row[13] === 'string' && row[13].trim().startsWith('{') ? JSON.parse(row[13]) : null;
+              if (parsed && typeof parsed === 'object') {
+                answersMap = parsed;
+              }
+            } catch (e) {
+              // ignore fallback
+            }
+          }
+          if (!answersMap['q1'] && row[10]) answersMap['q1'] = String(row[10]);
+          if (!answersMap['q2'] && row[11]) answersMap['q2'] = String(row[11]);
+          if (!answersMap['q3'] && row[12]) answersMap['q3'] = String(row[12]);
           
           groupMap[groupName] = {
             topicId: topicId,
@@ -772,9 +891,9 @@ function doGet(e) {
             groupName: groupName,
             points: [],
             conclusionNotes: {
-              summary: String(row[10] || ''),
-              principle: String(row[11] || ''),
-              errorAnalysis: String(row[12] || ''),
+              summary: String(answersMap['q1'] || row[10] || ''),
+              principle: String(answersMap['q2'] || row[11] || ''),
+              errorAnalysis: String(answersMap['q3'] || row[12] || ''),
               answers: answersMap
             },
             lastSavedAt: String(row[0])
@@ -801,6 +920,42 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 5. 모둠별 교사 평가 및 피드백 목록 조회
+  if (action === 'getEvaluations') {
+    ensureEvaluationsSheet(ss);
+    const sheet = ss.getSheetByName(SHEET_EVALUATIONS_NAME);
+    const data = sheet.getDataRange().getValues();
+    const evaluations = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[1] || !row[4]) continue; // topicId, groupName check
+      const key = String(row[1]) + '__' + String(row[2]) + '__' + String(row[3]) + '__' + String(row[4]);
+      evaluations[key] = {
+        topicId: String(row[1]),
+        grade: String(row[2]),
+        classNum: String(row[3]),
+        groupName: String(row[4]),
+        score: String(row[5] || ''),
+        feedbackComment: String(row[6] || ''),
+        rubricScores: {
+          accuracy: Number(row[7]) || 0,
+          graphInterpretation: Number(row[8]) || 0,
+          scientificReasoning: Number(row[9]) || 0,
+          errorAnalysis: Number(row[10]) || 0,
+          attitude: Number(row[11]) || 0
+        },
+        evaluator: String(row[12] || '교사'),
+        evaluatedAt: String(row[0] || '')
+      };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      evaluations: evaluations
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ status: 'unknown_action' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -816,19 +971,22 @@ function doPost(e) {
     if (action === 'saveSettings') {
       ensureConfigSheet(ss);
       const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
+      sheet.getRange("B:B").setNumberFormat('@');
       const values = sheet.getDataRange().getValues();
       
       const updateOrAppend = (keyName, val, desc) => {
         let found = false;
         for (let i = 1; i < values.length; i++) {
           if (values[i][0] === keyName) {
-            sheet.getRange(i + 1, 2).setValue(val);
+            sheet.getRange(i + 1, 2).setNumberFormat('@').setValue(String(val));
             found = true;
             break;
           }
         }
         if (!found) {
-          sheet.appendRow([keyName, val, desc]);
+          const nextRow = sheet.getLastRow() + 1;
+          sheet.appendRow([keyName, String(val), desc]);
+          sheet.getRange(nextRow, 2).setNumberFormat('@').setValue(String(val));
         }
       };
 
@@ -855,6 +1013,7 @@ function doPost(e) {
     if (action === 'saveAllGroupPasswords') {
       ensurePasswordsSheet(ss);
       const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+      sheet.getRange("A:E").setNumberFormat('@');
       const incoming = (payload && payload.passwords) || {};
       const timestamp = new Date();
       
@@ -869,12 +1028,12 @@ function doPost(e) {
         if (!pw) continue;
         const parts = key.split('__');
         if (parts.length === 4) {
-          rowsToAppend.push([parts[0], parts[1], parts[2], parts[3], String(pw), timestamp]);
+          rowsToAppend.push([String(parts[0]), String(parts[1]), String(parts[2]), String(parts[3]), String(pw), timestamp]);
         }
       }
       
       if (rowsToAppend.length > 0) {
-        sheet.getRange(2, 1, rowsToAppend.length, 6).setValues(rowsToAppend);
+        sheet.getRange(2, 1, rowsToAppend.length, 6).setNumberFormat('@').setValues(rowsToAppend);
       }
       
       return ContentService.createTextOutput(JSON.stringify({
@@ -887,6 +1046,7 @@ function doPost(e) {
     if (action === 'saveGroupPassword') {
       ensurePasswordsSheet(ss);
       const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+      sheet.getRange("A:E").setNumberFormat('@');
       const data = sheet.getDataRange().getValues();
       const timestamp = new Date();
       let foundIndex = -1;
@@ -900,17 +1060,19 @@ function doPost(e) {
       }
       
       if (foundIndex > 0) {
-        sheet.getRange(foundIndex, 5).setValue(String(payload.password));
+        sheet.getRange(foundIndex, 5).setNumberFormat('@').setValue(String(payload.password));
         sheet.getRange(foundIndex, 6).setValue(timestamp);
       } else {
+        const nextRow = sheet.getLastRow() + 1;
         sheet.appendRow([
-          payload.topicId,
-          payload.grade,
-          payload.classNum,
-          payload.groupName,
+          String(payload.topicId),
+          String(payload.grade),
+          String(payload.classNum),
+          String(payload.groupName),
           String(payload.password),
           timestamp
         ]);
+        sheet.getRange(nextRow, 5).setNumberFormat('@').setValue(String(payload.password));
       }
       
       return ContentService.createTextOutput(JSON.stringify({
@@ -981,25 +1143,17 @@ function doPost(e) {
         }
       }
       
-      // 문항별 답변 추출 및 전체 통합 답변 문자열 구성
+      // 문항별 답변 추출 및 전체 통합 답변 JSON 구성
       const notes = payload.conclusionNotes || {};
       let q1 = notes.summary || (notes.answers && notes.answers['q1']) || '';
       let q2 = notes.principle || (notes.answers && notes.answers['q2']) || '';
       let q3 = notes.errorAnalysis || (notes.answers && notes.answers['q3']) || '';
       
-      let fullReportFormatted = '';
+      let fullReportJson = '';
       if (notes.answers && typeof notes.answers === 'object') {
-        const entries = Object.entries(notes.answers);
-        if (entries.length > 0) {
-          fullReportFormatted = entries.map(([k, v], idx) => '[' + (idx + 1) + '번 답변] ' + v).join('\\n\\n');
-        }
-      }
-      if (!fullReportFormatted) {
-        fullReportFormatted = [
-          q1 ? '[1. 자료해석] ' + q1 : '',
-          q2 ? '[2. 과학원리] ' + q2 : '',
-          q3 ? '[3. 오차분석] ' + q3 : ''
-        ].filter(Boolean).join('\\n\\n');
+        fullReportJson = JSON.stringify(notes.answers);
+      } else {
+        fullReportJson = JSON.stringify({ q1: q1, q2: q2, q3: q3 });
       }
 
       // 점 데이터 기록
@@ -1020,7 +1174,7 @@ function doPost(e) {
               q1,
               q2,
               q3,
-              fullReportFormatted
+              fullReportJson
             ]);
           }
         });
@@ -1069,6 +1223,52 @@ function doPost(e) {
         message: '탐구 주제 목록이 스프레드시트에 저장되었습니다.'
       })).setMimeType(ContentService.MimeType.JSON);
     }
+
+    // 6. 교사 평가 및 피드백 저장 (채점, 코멘트, 루브릭)
+    if (action === 'saveEvaluation') {
+      ensureEvaluationsSheet(ss);
+      const sheet = ss.getSheetByName(SHEET_EVALUATIONS_NAME);
+      sheet.getRange("A:L").setNumberFormat('@');
+      const timestamp = new Date();
+      const allRows = sheet.getDataRange().getValues();
+      let foundIndex = -1;
+
+      for (let i = 1; i < allRows.length; i++) {
+        const r = allRows[i];
+        if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
+          foundIndex = i + 1;
+          break;
+        }
+      }
+
+      const rubrics = payload.rubricScores || {};
+      const evalRow = [
+        timestamp,
+        String(payload.topicId || ''),
+        String(payload.grade || ''),
+        String(payload.classNum || ''),
+        String(payload.groupName || ''),
+        String(payload.score || ''),
+        String(payload.feedbackComment || ''),
+        String(rubrics.accuracy || ''),
+        String(rubrics.graphInterpretation || ''),
+        String(rubrics.scientificReasoning || ''),
+        String(rubrics.errorAnalysis || ''),
+        String(rubrics.attitude || ''),
+        String(payload.evaluator || '교사')
+      ];
+
+      if (foundIndex > 0) {
+        sheet.getRange(foundIndex, 1, 1, 13).setValues([evalRow]);
+      } else {
+        sheet.appendRow(evalRow);
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: '평가 및 피드백이 스프레드시트에 저장되었습니다.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     
     return ContentService.createTextOutput(JSON.stringify({ status: 'invalid_action' }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1084,14 +1284,24 @@ function ensureConfigSheet(ss) {
   let sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_CONFIG_NAME, 0); // insert at first tab
+    sheet.getRange("B:B").setNumberFormat('@'); // B열(설정값) 전체를 Plain Text(텍스트 형식)으로 지정하여 0000이 0으로 축약되지 않도록 설정
     sheet.appendRow(['설정 항목 (Key)', '설정값 (Value)', '설명 및 안내']);
-    sheet.appendRow(['교사_비밀번호', '0000', '교사용 관리 콘솔 접속 비밀번호 (기본값: 0000)']);
+    sheet.appendRow(['교사_비밀번호', "'0000", '교사용 관리 콘솔 접속 비밀번호 (기본값: 0000)']);
     sheet.appendRow(['전체_모둠_데이터_확인_허용', 'TRUE', '학생 화면에서 학급 전체 모둠 데이터 확인 버튼 노출 여부 (TRUE/FALSE)']);
     sheet.appendRow(['컴퓨터_자동_분석_그래프_허용', 'TRUE', '학생 화면에서 컴퓨터 자동 분석 탭 및 최적선 비교 노출 여부 (TRUE/FALSE)']);
     sheet.appendRow(['모둠_비밀번호_인증_사용', 'TRUE', '학생 입장 시 교사가 배부한 모둠 비밀번호 필수 입력 여부 (TRUE/FALSE)']);
+    // B2 셀에 텍스트 서식과 0000 명시적 재할당
+    sheet.getRange(2, 2).setNumberFormat('@').setValue('0000');
     sheet.setFrozenRows(1);
     sheet.getRange("A1:C1").setBackground("#d9ead3").setFontWeight("bold");
     sheet.autoResizeColumns(1, 3);
+  } else {
+    // 기존 시트가 있어도 B열 텍스트 서식 적용 및 0으로 기록되어 있는 경우 0000으로 보정
+    sheet.getRange("B:B").setNumberFormat('@');
+    const currentVal = sheet.getRange(2, 2).getValue();
+    if (String(currentVal).trim() === '0') {
+      sheet.getRange(2, 2).setNumberFormat('@').setValue('0000');
+    }
   }
 }
 
@@ -1099,10 +1309,13 @@ function ensurePasswordsSheet(ss) {
   let sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_PASSWORDS_NAME, 1);
+    sheet.getRange("A:E").setNumberFormat('@');
     sheet.appendRow(['주제ID', '학년', '반', '모둠명', '모둠비밀번호', '최종설정일시']);
     sheet.setFrozenRows(1);
     sheet.getRange("A1:F1").setBackground("#fff2cc").setFontWeight("bold");
     sheet.autoResizeColumns(1, 6);
+  } else {
+    sheet.getRange("A:E").setNumberFormat('@');
   }
 }
 
@@ -1139,6 +1352,23 @@ function ensureDataSheet(ss) {
     ]);
     sheet.setFrozenRows(1);
     sheet.getRange("A1:N1").setBackground("#fce8e6").setFontWeight("bold");
+  }
+}
+
+function ensureEvaluationsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_EVALUATIONS_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_EVALUATIONS_NAME);
+    sheet.getRange("A:M").setNumberFormat('@');
+    sheet.appendRow([
+      '평가일시', '주제ID', '학년', '반', '모둠명', '평가등급/점수',
+      '교사_총평_피드백', '루브릭_정확도(1-5)', '루브릭_해석력(1-5)', '루브릭_개념도출(1-5)', '루브릭_오차분석(1-5)', '루브릭_탐구태도(1-5)', '평가자'
+    ]);
+    sheet.setFrozenRows(1);
+    sheet.getRange("A1:M1").setBackground("#e6f4ea").setFontWeight("bold");
+    sheet.autoResizeColumns(1, 13);
+  } else {
+    sheet.getRange("A:M").setNumberFormat('@');
   }
 }
 `;

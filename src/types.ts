@@ -164,6 +164,24 @@ export interface ScientificInsight {
   recommendedQuestion: string;
 }
 
+export interface GroupEvaluation {
+  topicId: string;
+  grade: string;
+  classNum: string;
+  groupName: string;
+  score?: string; // e.g. "상 / 중 / 하", "우수", "95점"
+  feedbackComment: string; // 교사 코멘트 및 피드백
+  rubricScores?: {
+    accuracy?: number; // 1. 데이터 측정 및 기록 (1-5)
+    graphInterpretation?: number; // 2. 그래프 작도 및 규칙성 해석 (1-5)
+    scientificReasoning?: number; // 3. 과학적 원리 및 결론 도출 (1-5)
+    errorAnalysis?: number; // 4. 오차 원인 분석 (1-5)
+    attitude?: number; // 5. 탐구 태도 (1-5)
+  };
+  evaluatedAt?: string;
+  evaluator?: string;
+}
+
 export interface GASConfig {
   webAppUrl: string;
   sheetId?: string;

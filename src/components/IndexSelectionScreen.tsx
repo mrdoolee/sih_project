@@ -193,9 +193,21 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
         <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
           {/* Card Title */}
           <div className="border-b border-slate-800 pb-5 mb-6">
-            <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold uppercase tracking-wider mb-1">
-              <Sparkles className="w-4 h-4" />
-              <span>Science Lab Authentication</span>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold uppercase tracking-wider">
+                <Sparkles className="w-4 h-4" />
+                <span>Science Lab Authentication</span>
+              </div>
+              {gasWebAppUrl ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>구글 시트 연동됨</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                  <span>오프라인/로컬 모드</span>
+                </span>
+              )}
             </div>
             <h2 className="text-2xl font-bold text-white">
               실험 탐구 주제 및 모둠 선택

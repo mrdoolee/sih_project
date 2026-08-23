@@ -23,6 +23,7 @@ import {
   fetchTopicsFromGAS,
   fetchTeacherSettingsFromGAS
 } from './utils/gasService';
+import { parseDistributionParams } from './utils/distributionHelper';
 import { computeTrendline } from './utils/mathAnalysis';
 import { Header } from './components/Header';
 import { DataTable } from './components/DataTable';
@@ -34,13 +35,21 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { IndexSelectionScreen } from './components/IndexSelectionScreen';
 
 export default function App() {
-  // Page Routing: 'student' or 'teacher' (supports query param ?page=teacher or standalone teacher.html)
+  // Page Routing: 'teacher' (default index) or 'student' (accessed via distributed link ?mode=student or explicit button)
   const [currentPage, setCurrentPage] = useState<'student' | 'teacher'>(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('page') === 'teacher' || window.location.hash === '#teacher') {
+    const mode = params.get('mode');
+    const page = params.get('page');
+    // If student mode or student page or specific student parameters exist in URL
+    if (mode === 'student' || page === 'student' || params.has('topic') || params.has('group') || window.location.hash === '#student') {
+      return 'student';
+    }
+    // Explicit teacher mode or hash
+    if (page === 'teacher' || mode === 'teacher' || window.location.hash === '#teacher') {
       return 'teacher';
     }
-    return 'student';
+    // Default entry (index) is Teacher Console
+    return 'teacher';
   });
 
   // Topics, GAS Config & Teacher Settings
@@ -232,17 +241,28 @@ export default function App() {
     }
   };
 
-  // Initial background sync if webAppUrl is set
+  // Initial distribution parameters parsing (e.g. ?gas=...&topic=...&grade=...&class=...)
   useEffect(() => {
-    if (gasConfig.webAppUrl) {
-      fetchTeacherSettingsFromGAS(gasConfig.webAppUrl).then((stg) => {
-        if (stg) {
-          setTeacherSettings(stg);
-          saveStoredTeacherSettings(stg);
-        }
-      }).catch(() => {});
+    const params = parseDistributionParams();
+    if (params.hasDistributionParams) {
+      if (params.gasUrl && params.gasUrl !== gasConfig.webAppUrl) {
+        const newConfig = { ...gasConfig, webAppUrl: params.gasUrl };
+        setGASConfig(newConfig);
+        saveStoredGASConfig(newConfig);
+        showToast('선생님 구글 시트 URL이 등록되었습니다.');
+      }
+
+      if (params.topicId) {
+        setSelectedTopicId(params.topicId);
+      }
+      if (params.grade) {
+        setSelectedGrade(params.grade);
+      }
+      if (params.classNum) {
+        setSelectedClass(params.classNum);
+      }
     }
-  }, [gasConfig.webAppUrl]);
+  }, []);
 
   // Refresh All Groups Data for modal
   const handleRefreshAllGroups = async () => {
