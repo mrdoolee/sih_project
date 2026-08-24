@@ -4,7 +4,6 @@ import {
   Users,
   Save,
   BarChart3,
-  Settings,
   Printer,
   Sparkles,
   CloudCheck,
@@ -29,7 +28,6 @@ interface HeaderProps {
   onSwitchGroup: () => void;
   onSave: () => void;
   onOpenAllGroups: () => void;
-  onOpenTeacherMode?: () => void;
   onOpenReportPrint: () => void;
   onResetData: () => void;
   isSaving: boolean;
@@ -52,7 +50,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchGroup,
   onSave,
   onOpenAllGroups,
-  onOpenTeacherMode,
   onOpenReportPrint,
   onResetData,
   isSaving,
@@ -127,19 +124,6 @@ export const Header: React.FC<HeaderProps> = ({
             <Home className="w-4 h-4 text-slate-600" />
             <span>첫 화면으로</span>
           </button>
-
-          {/* Teacher Mode Button (Password Protected) */}
-          {onOpenTeacherMode && (
-            <button
-              id="btn-header-teacher-mode"
-              onClick={onOpenTeacherMode}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer"
-              title="교사용 관리 모드로 전환 (비밀번호 필요)"
-            >
-              <Settings className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">교사 모드</span>
-            </button>
-          )}
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ConfirmModal, ConfirmVariant, ConfirmIconType } from './ConfirmModal';
 import {
   TopicConfig,
   GroupExperimentData,
@@ -91,7 +92,61 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
     }
   }, [currentTopic]);
 
+  // Global Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    icon?: ConfirmIconType;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {}
+  });
+
+  const openConfirm = (config: {
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    icon?: ConfirmIconType;
+    onConfirm: () => void;
+  }) => {
+    setConfirmModal({
+      isOpen: true,
+      ...config
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
   const [isFetchingGAS, setIsFetchingGAS] = useState(false);
+
+  const handleRequestManualFetchEvaluations = () => {
+    openConfirm({
+      title: '최신 탐구 데이터 동기화',
+      description: '구글 스프레드시트에서 학생들의 최신 측정값과 제출 보고서 및 평가 데이터를 모두 불러옵니다. 계속 진행하시겠습니까?',
+      subWarning: '화면에 표시된 탐구 데이터와 채점 결과가 실시간 시트 데이터로 갱신됩니다.',
+      confirmText: '데이터 불러오기',
+      variant: 'primary',
+      icon: 'refresh',
+      onConfirm: () => {
+        closeConfirm();
+        handleManualFetchEvaluations();
+      }
+    });
+  };
+
   const handleManualFetchEvaluations = async () => {
     if (!gasWebAppUrl || !gasWebAppUrl.startsWith('http')) return;
     setIsFetchingGAS(true);
@@ -186,6 +241,22 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
   // Total rubric score calculation
   const totalRubricScore = formAccuracy + formInterpretation + formReasoning + formErrorAnalysis + formAttitude;
   const scaledScore100 = Math.round((totalRubricScore / 25) * 100);
+
+  // Save evaluation handler (with confirmation)
+  const handleRequestSaveEvaluation = () => {
+    openConfirm({
+      title: '교사 평가 및 피드백 저장',
+      description: `${selectedGrade} ${selectedClass} ${selectedGroupName}에 대해 입력하신 루브릭 채점 및 총평 피드백을 구글 시트에 저장합니다. 계속 진행하시겠습니까?`,
+      subWarning: '구글 스프레드시트에 저장하면 해당 모둠의 평가 데이터가 최신 내용으로 안전하게 갱신됩니다.',
+      confirmText: '저장하기',
+      variant: 'indigo',
+      icon: 'save',
+      onConfirm: () => {
+        closeConfirm();
+        handleSaveEvaluation();
+      }
+    });
+  };
 
   // Save evaluation handler
   const handleSaveEvaluation = async () => {
@@ -321,21 +392,11 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleManualFetchEvaluations}
-              disabled={isFetchingGAS || isLoading || !gasWebAppUrl}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-              title="구글 스프레드시트에서 학생 탐구 데이터와 평가 결과를 새로 불러옵니다."
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingGAS || isLoading ? 'animate-spin' : ''}`} />
-              <span>📥 시트에서 불러오기</span>
-            </button>
-            <button
-              type="button"
               onClick={handlePrintClassSummary}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
               title="학급 전체 모둠 제출현황 및 평가 취합표 인쇄"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>학급 종합표 인쇄/PDF</span>
             </button>
           </div>
@@ -986,7 +1047,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             <button
               type="button"
               id="btn-save-group-eval"
-              onClick={handleSaveEvaluation}
+              onClick={handleRequestSaveEvaluation}
               disabled={isSavingEval}
               className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
             >
@@ -1178,6 +1239,20 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           </table>
         </div>
       </div>
+
+      {/* Action Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={closeConfirm}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        subWarning={confirmModal.subWarning}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        variant={confirmModal.variant}
+        icon={confirmModal.icon}
+      />
     </div>
   );
 };

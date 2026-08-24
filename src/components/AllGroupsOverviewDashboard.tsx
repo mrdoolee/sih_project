@@ -203,57 +203,41 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     <div className="space-y-6">
       {/* 1. Header & Selector Control Bar */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                반 전체 통합 조회
-              </span>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">
-                4. 전체 모둠 탐구 결과 확인
-              </h2>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              같은 반의 모든 모둠이 제출한 실험 측정 데이터, 그래프, 결론 및 오차 분석을 구조화된 테이블로 한눈에 비교·분석합니다.
-            </p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              반 전체 통합 조회
+            </span>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">
+              5. 전체 모둠 탐구 결과 확인
+            </h2>
           </div>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            같은 반의 모든 모둠이 제출한 실험 측정 데이터, 그래프, 결론 및 오차 분석을 구조화된 테이블로 한눈에 비교·분석합니다.
+          </p>
+        </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            {onRefreshData && (
-              <button
-                type="button"
-                id="btn-all-groups-refresh"
-                onClick={onRefreshData}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all cursor-pointer disabled:opacity-50 shadow-xs"
-                title="스프레드시트에서 최신 모둠 데이터를 다시 불러옵니다."
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>📥 시트에서 불러오기</span>
-              </button>
-            )}
+        {/* Actions below description */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            id="btn-all-groups-csv"
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>CSV 다운로드</span>
+          </button>
 
-            <button
-              type="button"
-              id="btn-all-groups-csv"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-all cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>CSV 다운로드</span>
-            </button>
-
-            <button
-              type="button"
-              id="btn-all-groups-print"
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>결과표 인쇄 / PDF</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            id="btn-all-groups-print"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>결과표 인쇄 / PDF</span>
+          </button>
         </div>
 
         {/* Filters Grid */}

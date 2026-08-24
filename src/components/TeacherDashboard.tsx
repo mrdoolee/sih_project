@@ -41,6 +41,7 @@ import {
   FlaskConical,
   LayoutGrid
 } from 'lucide-react';
+import { ConfirmModal, ConfirmVariant, ConfirmIconType } from './ConfirmModal';
 import {
   TopicConfig,
   GASConfig,
@@ -141,7 +142,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Topics Sync state & guide toggle
   const [isSyncingTopics, setIsSyncingTopics] = useState(false);
   const [topicSyncFeedback, setTopicSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [showTopicGuide, setShowTopicGuide] = useState(true);
+  const [showTopicGuide, setShowTopicGuide] = useState(false);
 
   // Edit / Add Topic State
   const [editingTopic, setEditingTopic] = useState<TopicConfig | null>(null);
@@ -205,6 +206,54 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setIsSyncingSettings(false);
       setTimeout(() => setSyncFeedback(null), 4000);
     }
+  };
+
+  // Settings: Request Push to Spreadsheet (with confirmation)
+  const handleRequestPushSettings = () => {
+    if (!gasConfig.webAppUrl) {
+      setSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭을 먼저 설정하세요.'
+      });
+      setTimeout(() => setSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '환경설정 시트 덮어쓰기',
+      description: '현재 웹 화면의 환경설정 내용으로 구글 스프레드시트 [환경설정] 탭의 기존 내용이 완전히 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '구글 시트에 직접 작성해 둔 설정이 있다면 현재 웹의 설정으로 대체됩니다.',
+      confirmText: '시트로 내보내기',
+      variant: 'indigo',
+      icon: 'upload',
+      onConfirm: () => {
+        closeConfirm();
+        handlePushSettingsToSpreadsheet();
+      }
+    });
+  };
+
+  // Settings: Request Fetch from Spreadsheet (with confirmation)
+  const handleRequestFetchSettings = () => {
+    if (!gasConfig.webAppUrl) {
+      setSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭을 먼저 설정하세요.'
+      });
+      setTimeout(() => setSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '환경설정 시트에서 가져오기',
+      description: '구글 스프레드시트의 환경설정 내용을 가져옵니다. 현재 웹 브라우저의 환경설정이 시트 내용으로 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '현재 웹 브라우저에서 작업 중이던 미저장 설정은 시트 내용으로 대체됩니다.',
+      confirmText: '시트에서 불러오기',
+      variant: 'primary',
+      icon: 'download',
+      onConfirm: () => {
+        closeConfirm();
+        handleFetchSettingsFromSpreadsheet();
+      }
+    });
   };
 
   // Push current settings to Google Spreadsheet [환경설정] tab
@@ -314,6 +363,92 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const [masterSyncFeedback, setMasterSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSyncingMaster, setIsSyncingMaster] = useState<boolean>(false);
+
+  // Global Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    icon?: ConfirmIconType;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {}
+  });
+
+  const openConfirm = (config: {
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    icon?: ConfirmIconType;
+    onConfirm: () => void;
+  }) => {
+    setConfirmModal({
+      isOpen: true,
+      ...config
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Master: Request Push All to Spreadsheet (with confirmation)
+  const handleRequestPushAllMaster = () => {
+    if (!gasConfig.webAppUrl) {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. URL을 먼저 저장하세요.'
+      });
+      setTimeout(() => setMasterSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '구글 시트 전체 설정 덮어쓰기',
+      description: '현재 웹 화면의 환경설정, 전체 탐구 주제, 전체 모둠 비밀번호가 구글 스프레드시트에 일괄 전송되어 기존 시트 데이터를 완전히 덮어씁니다. 계속 진행하시겠습니까?',
+      subWarning: '구글 시트에 직접 작성해 둔 내용이 있다면 현재 웹 화면의 내용으로 대체됩니다.',
+      confirmText: '시트로 전체 내보내기',
+      variant: 'indigo',
+      icon: 'upload',
+      onConfirm: () => {
+        closeConfirm();
+        handlePushAllMasterToSpreadsheet();
+      }
+    });
+  };
+
+  // Master: Request Fetch All from Spreadsheet (with confirmation)
+  const handleRequestFetchAllMaster = () => {
+    if (!gasConfig.webAppUrl) {
+      setMasterSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. URL을 먼저 저장하세요.'
+      });
+      setTimeout(() => setMasterSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '웹 설정 전체 초기화 및 시트 동기화',
+      description: '구글 스프레드시트에 저장된 환경설정, 탐구 주제, 모둠 비밀번호를 가져와 현재 웹의 모든 설정을 시트 내용으로 강제 일치시킵니다. 계속 진행하시겠습니까?',
+      subWarning: '현재 웹 브라우저에서 작업 중이던 미저장 변경사항은 시트 내용으로 대체됩니다.',
+      confirmText: '시트에서 전체 불러오기',
+      variant: 'primary',
+      icon: 'download',
+      onConfirm: () => {
+        closeConfirm();
+        handleFetchAllMasterFromSpreadsheet();
+      }
+    });
+  };
 
   // Master: Fetch all from spreadsheet
   const handleFetchAllMasterFromSpreadsheet = async () => {
@@ -498,6 +633,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  // Clear All Group Passwords (with confirmation)
+  const handleRequestClearAllPasswords = () => {
+    openConfirm({
+      title: '모둠 비밀번호 일괄 초기화',
+      description: "모든 모둠의 접속 비밀번호를 '비밀번호 없음(공개)' 상태로 초기화합니다. 계속 진행하시겠습니까?",
+      subWarning: '초기화된 상태를 스프레드시트에 반영하려면 이후 [비번 내보내기] 또는 [시트로 전체 내보내기]를 진행해야 합니다.',
+      confirmText: '비밀번호 초기화',
+      variant: 'danger',
+      icon: 'trash',
+      onConfirm: () => {
+        closeConfirm();
+        handleClearAllPasswords();
+      }
+    });
+  };
+
   // Clear All Group Passwords
   const handleClearAllPasswords = () => {
     clearAllGroupPasswords();
@@ -507,6 +658,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       message: '모든 모둠 비밀번호가 로컬에서 초기화되었습니다. 스프레드시트에 반영하려면 [시트로 전체 내보내기] 버튼을 누르세요.'
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
+  };
+
+  // Topics: Request Fetch from Spreadsheet (with confirmation)
+  const handleRequestFetchTopics = () => {
+    if (!gasConfig.webAppUrl) {
+      setTopicSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭을 확인하세요.'
+      });
+      setTimeout(() => setTopicSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '탐구 주제 목록 시트에서 가져오기',
+      description: '구글 스프레드시트의 탐구 주제 목록을 가져옵니다. 현재 웹 화면의 주제 목록이 시트 내용으로 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '현재 웹 브라우저에서 작업 중이던 미저장 주제는 시트 내용으로 대체됩니다.',
+      confirmText: '주제 목록 불러오기',
+      variant: 'primary',
+      icon: 'download',
+      onConfirm: () => {
+        closeConfirm();
+        handleFetchTopicsFromSpreadsheet();
+      }
+    });
   };
 
   // Sync topics directly from Google Spreadsheet [환경설정_주제목록] tab
@@ -545,6 +720,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  // Topics: Request Push to Spreadsheet (with confirmation)
+  const handleRequestPushTopics = () => {
+    if (!gasConfig.webAppUrl) {
+      setTopicSyncFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭을 먼저 설정하세요.'
+      });
+      setTimeout(() => setTopicSyncFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '탐구 주제 목록 시트 덮어쓰기',
+      description: '현재 웹 화면의 탐구 주제 목록으로 구글 스프레드시트 [환경설정_주제목록] 탭의 내용이 완전히 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '구글 시트에 직접 작성해 둔 주제가 있다면 현재 웹의 주제 목록으로 대체됩니다.',
+      confirmText: '주제 목록 내보내기',
+      variant: 'indigo',
+      icon: 'upload',
+      onConfirm: () => {
+        closeConfirm();
+        handlePushTopicsToSpreadsheet();
+      }
+    });
+  };
+
   // Push current topics to Google Spreadsheet [환경설정_주제목록] tab
   const handlePushTopicsToSpreadsheet = async () => {
     if (!gasConfig.webAppUrl) {
@@ -578,6 +777,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setIsSyncingTopics(false);
       setTimeout(() => setTopicSyncFeedback(null), 4000);
     }
+  };
+
+  // Passwords: Request Fetch from Spreadsheet (with confirmation)
+  const handleRequestFetchPasswords = () => {
+    if (!gasConfig.webAppUrl) {
+      setPasswordFeedback({
+        type: 'error',
+        message: '구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭을 먼저 설정하세요.'
+      });
+      setTimeout(() => setPasswordFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '모둠 비밀번호 시트에서 가져오기',
+      description: '구글 스프레드시트의 모둠 비밀번호 목록을 가져옵니다. 현재 웹 화면의 비밀번호가 시트 내용으로 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '현재 웹 브라우저에서 작업 중이던 미저장 비밀번호는 시트 내용으로 대체됩니다.',
+      confirmText: '비밀번호 불러오기',
+      variant: 'primary',
+      icon: 'download',
+      onConfirm: () => {
+        closeConfirm();
+        handleFetchPasswordsFromSpreadsheet();
+      }
+    });
   };
 
   // Sync group passwords from Google Spreadsheet [환경설정_모둠비밀번호] tab
@@ -616,6 +839,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  // Passwords: Request Push to Spreadsheet (with confirmation)
+  const handleRequestPushPasswords = () => {
+    if (!gasConfig.webAppUrl) {
+      setPasswordFeedback({
+        type: 'error',
+        message: '⚠️ 구글 Apps Script 웹 앱 URL이 설정되지 않았습니다. [구글 시트 연동 설정] 탭에 URL을 먼저 등록해주세요.'
+      });
+      setTimeout(() => setPasswordFeedback(null), 4000);
+      return;
+    }
+    openConfirm({
+      title: '모둠 비밀번호 시트 덮어쓰기',
+      description: '현재 웹의 모든 모둠 비밀번호로 구글 스프레드시트 [환경설정_모둠비밀번호] 탭의 내용이 완전히 교체됩니다. 계속 진행하시겠습니까?',
+      subWarning: '구글 시트에 직접 작성해 둔 비밀번호가 있다면 현재 웹의 비밀번호로 대체됩니다.',
+      confirmText: '비밀번호 내보내기',
+      variant: 'indigo',
+      icon: 'upload',
+      onConfirm: () => {
+        closeConfirm();
+        handlePushAllPasswordsToSpreadsheet();
+      }
+    });
+  };
+
   const handleResetGroupPw = (topicId: string, grade: string, classNum: string, groupName: string) => {
     resetGroupPassword(topicId, grade, classNum, groupName);
     setPasswordsState(getAllGroupPasswords());
@@ -643,6 +890,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       message: `${grade} ${classNum} ${groupName}의 비밀번호가 [${newPw.trim()}]로 설정되었습니다. 시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
     });
     setTimeout(() => setPasswordFeedback(null), 4000);
+  };
+
+  const handleRequestDeleteTopic = (topicId: string, topicTitle: string) => {
+    if (topics.length <= 1) return;
+    openConfirm({
+      title: '탐구 주제 삭제',
+      description: `선택하신 '${topicTitle}' 탐구 주제를 삭제하시겠습니까?`,
+      subWarning: '삭제 후 스프레드시트에 반영하려면 상단의 [주제 목록 내보내기] 또는 [시트로 전체 내보내기]를 진행해야 합니다.',
+      confirmText: '삭제하기',
+      variant: 'danger',
+      icon: 'trash',
+      onConfirm: () => {
+        closeConfirm();
+        handleDeleteTopic(topicId);
+      }
+    });
   };
 
   const handleDeleteTopic = (topicId: string) => {
@@ -838,9 +1101,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // 2. UNLOCKED VIEW: Full Teacher Dashboard
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
-      {/* Left Navigation Sidebar (Desktop / Tablet) - Fixed / Sticky without scrolling page */}
-      <aside className="w-full md:w-64 lg:w-72 bg-slate-900 text-white flex flex-col shrink-0 border-r border-slate-800 shadow-xl md:sticky md:top-0 md:h-screen md:overflow-y-auto justify-between">
+    <div className="h-screen w-full overflow-hidden bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
+      {/* Left Navigation Sidebar (Desktop / Tablet) - Fixed height independent scroll */}
+      <aside className="w-full md:w-64 lg:w-72 bg-slate-900 text-white flex flex-col shrink-0 border-r border-slate-800 shadow-xl h-auto md:h-full overflow-y-auto justify-between z-20">
         {/* Top Brand Header */}
         <div>
           <div className="p-4 sm:p-5 border-b border-slate-800 bg-slate-950/70">
@@ -1061,10 +1324,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-100 overflow-y-auto">
-        {/* Top Header Bar (Fixed / Sticky Header with Page Sync Buttons) */}
-        <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between sticky top-0 z-30 shadow-xs gap-3">
+      {/* Main Content Area (Right Layer) */}
+      <main className="flex-1 flex flex-col min-w-0 h-full bg-slate-100 overflow-hidden">
+        {/* Top Header Bar - Permanently Pinned at the top of the right layer */}
+        <header className="shrink-0 bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between z-30 shadow-xs gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
               {activeTab === 'gas' && '1. GAS 연동'}
@@ -1091,7 +1354,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handleFetchAllMasterFromSpreadsheet}
+                  onClick={handleRequestFetchAllMaster}
                   disabled={isSyncingMaster || !gasConfig.webAppUrl}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                   title="스프레드시트에서 모든 설정 및 데이터를 불러옵니다."
@@ -1101,7 +1364,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={handlePushAllMasterToSpreadsheet}
+                  onClick={handleRequestPushAllMaster}
                   disabled={isSyncingMaster || !gasConfig.webAppUrl}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   title="현재 웹의 모든 설정을 스프레드시트로 내보냅니다."
@@ -1117,7 +1380,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handleFetchSettingsFromSpreadsheet}
+                  onClick={handleRequestFetchSettings}
                   disabled={isSyncingSettings || !gasConfig.webAppUrl}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                   title="스프레드시트 [환경설정] 탭의 최신 설정을 불러옵니다."
@@ -1127,7 +1390,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handlePushSettingsToSpreadsheet()}
+                  onClick={handleRequestPushSettings}
                   disabled={isSyncingSettings || !gasConfig.webAppUrl}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   title="현재 설정을 스프레드시트 [환경설정] 탭으로 내보냅니다."
@@ -1145,7 +1408,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <>
                     <button
                       type="button"
-                      onClick={handleFetchTopicsFromSpreadsheet}
+                      onClick={handleRequestFetchTopics}
                       disabled={isSyncingTopics || !gasConfig.webAppUrl}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                       title="스프레드시트 [환경설정_주제목록] 탭에서 주제 목록을 불러옵니다."
@@ -1155,7 +1418,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={handlePushTopicsToSpreadsheet}
+                      onClick={handleRequestPushTopics}
                       disabled={isSyncingTopics || !gasConfig.webAppUrl}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                       title="현재 주제 목록을 스프레드시트 [환경설정_주제목록] 탭으로 내보냅니다."
@@ -1168,7 +1431,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <>
                     <button
                       type="button"
-                      onClick={handleFetchPasswordsFromSpreadsheet}
+                      onClick={handleRequestFetchPasswords}
                       disabled={isSyncingPasswords || !gasConfig.webAppUrl}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                       title="스프레드시트 [환경설정_모둠비밀번호] 탭에서 비밀번호를 불러옵니다."
@@ -1178,7 +1441,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={handlePushAllPasswordsToSpreadsheet}
+                      onClick={handleRequestPushPasswords}
                       disabled={isSyncingPasswords || !gasConfig.webAppUrl}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                       title="현재 비밀번호 목록을 스프레드시트 [환경설정_모둠비밀번호] 탭으로 내보냅니다."
@@ -1207,21 +1470,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </header>
 
-        {/* GAS Disconnected Banner Alert */}
-        {!isGasConnected && (
-          <div className="mx-4 sm:mx-6 mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 flex items-start gap-3 shadow-xs">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-xs space-y-1">
-              <p className="font-bold text-amber-800">구글 Apps Script(GAS) Web App 연동이 필요합니다.</p>
-              <p className="text-amber-700">
-                [1. GAS 연동] 탭에서 구글 스프레드시트 Web App URL을 입력하고 연동을 완료해야 나머지 관리 및 탐구 결과 확인 탭이 활성화됩니다.
-              </p>
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          {/* GAS Disconnected Banner Alert */}
+          {!isGasConnected && (
+            <div className="mx-4 sm:mx-6 mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 flex items-start gap-3 shadow-xs">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-amber-800">구글 Apps Script(GAS) Web App 연동이 필요합니다.</p>
+                <p className="text-amber-700">
+                  [1. GAS 연동] 탭에서 구글 스프레드시트 Web App URL을 입력하고 연동을 완료해야 나머지 관리 및 탐구 결과 확인 탭이 활성화됩니다.
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Content Container */}
-        <div className="p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6 flex-1">
+          {/* Content Container */}
+          <div className="p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
         {/* TAB 1: PERMISSIONS & FEATURE TOGGLES & PASSWORD MANAGEMENT */}
         {activeTab === 'permissions' && (
           <div className="space-y-6">
@@ -1611,64 +1876,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {testStatus}
                 </p>
               )}
-
-              {/* Quick Share to Students Banner */}
-              <div className="mt-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <h4 className="text-xs sm:text-sm font-bold text-indigo-950 flex items-center gap-1.5">
-                    <QrCode className="w-4 h-4 text-indigo-600" />
-                    <span>학생 배부용 원클릭 링크 & 교실용 대형 QR코드</span>
-                  </h4>
-                  <p className="text-xs text-indigo-800">
-                    학생 기기에 웹 앱 URL을 직접 입력할 필요 없이, 좌측 메뉴의 <strong>[4. 학생 배부 링크 & QR]</strong>에서 QR코드 또는 공유 링크를 복사하여 학생들에게 배부할 수 있습니다.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('share')}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shrink-0 shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>4. 학생 배부 메뉴로 이동</span>
-                </button>
-              </div>
-
-              {/* Master Manual Data Synchronization Panel */}
-              <div className="mt-4 p-4 sm:p-5 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-md space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <Database className="w-5 h-5 text-indigo-400" />
-                      <h4 className="text-sm font-bold text-white">
-                        수동 데이터 일괄 동기화 (Master Sync)
-                      </h4>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        데이터 유실 방지 안전 모드
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400">
-                      상단 고정 헤더의 <strong>[시트에서 전체 불러오기] / [시트로 전체 내보내기]</strong> 버튼을 통해 전체 설정을 안전하게 동기화할 수 있습니다.
-                    </p>
-                  </div>
-                </div>
-
-                {masterSyncFeedback && (
-                  <div
-                    className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
-                      masterSyncFeedback.type === 'success'
-                        ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-700'
-                        : 'bg-rose-950/80 text-rose-200 border border-rose-700'
-                    }`}
-                  >
-                    {masterSyncFeedback.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                    )}
-                    <span>{masterSyncFeedback.message}</span>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Step-by-step Setup Guide */}
@@ -1753,44 +1960,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             {topicsSubTab === 'topicsList' && (
               <div className="space-y-6">
             {/* 1. Header & Direct Sync Action Bar */}
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-indigo-600" />
-                    <h2 className="text-base font-bold text-slate-900">
-                      탐구 주제 & 모둠 관리 (스프레드시트 [환경설정_주제목록] 연동)
-                    </h2>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-600">
-                    탐구 주제, 모둠 목록, X·Y축 변인 및 단위, 탐구 질문을 설정합니다. 상단 고정 헤더의 <strong>[주제 불러오기] / [주제 내보내기]</strong> 버튼으로 안전하게 수동 동기화할 수 있습니다.
-                  </p>
+            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-indigo-600" />
+                  <h2 className="text-base font-bold text-slate-900">
+                    탐구 주제 & 모둠 관리 (스프레드시트 [환경설정_주제목록] 연동)
+                  </h2>
                 </div>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  탐구 주제, 모둠 목록, X·Y축 변인 및 단위, 탐구 질문을 설정합니다. 상단 고정 헤더의 <strong>[주제 불러오기] / [주제 내보내기]</strong> 버튼으로 안전하게 수동 동기화할 수 있습니다.
+                </p>
+              </div>
 
-                {/* Action Buttons */}
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {/* Action Buttons below text */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowTopicGuide(!showTopicGuide)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all cursor-pointer"
+                  title="연동 구조 및 열(Column) 상세 가이드 토글"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-slate-600" />
+                  <span>{showTopicGuide ? '연동 설명 접기' : '연동 설명 보기'}</span>
+                  {showTopicGuide ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+                </button>
+
+                {!editingTopic && (
                   <button
                     type="button"
-                    onClick={() => setShowTopicGuide(!showTopicGuide)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all cursor-pointer"
-                    title="연동 구조 및 열(Column) 상세 가이드 토글"
+                    onClick={handleStartAdd}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-2xs transition-colors cursor-pointer"
                   >
-                    <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                    <span>{showTopicGuide ? '연동 설명 접기' : '연동 설명 보기'}</span>
-                    {showTopicGuide ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>새 주제 추가</span>
                   </button>
-
-                  {!editingTopic && (
-                    <button
-                      type="button"
-                      onClick={handleStartAdd}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>새 주제 추가</span>
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
 
               {topicSyncFeedback && (
@@ -2437,7 +2642,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         {topics.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => handleDeleteTopic(t.topicId)}
+                            onClick={() => handleRequestDeleteTopic(t.topicId, t.title)}
                             className="px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                             title="삭제"
                           >
@@ -2448,204 +2653,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       </div>
                     </div>
                   ))}
-                </div>
-
-                {/* 3. Embedded Quick Group Passwords Section inside Topics Tab */}
-                <div className="mt-8 pt-6 border-t border-slate-200 bg-white rounded-2xl p-5 sm:p-6 border shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-amber-600 flex items-center justify-center text-white shrink-0 shadow-2xs">
-                        <KeyRound className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                          <span>모둠별 비밀번호 설정 및 배부 관리</span>
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                            teacherSettings.requireGroupPassword
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}>
-                            {teacherSettings.requireGroupPassword ? '🟢 비밀번호 인증 ON' : '⚪ 비밀번호 인증 OFF'}
-                          </span>
-                        </h4>
-                        <p className="text-xs text-slate-600 mt-0.5">
-                          각 탐구 주제의 모둠별 비밀번호를 설정하거나 일괄 생성하여 인쇄물로 배부할 수 있습니다.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsPrintModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-all shadow-xs cursor-pointer"
-                        title="모둠별 배부용 카드 또는 명렬표 형태로 인쇄"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>🖨️ 비밀번호 출력 / 인쇄</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleBulkGenerateRandomPasswords}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all cursor-pointer"
-                        title="선택한 주제의 모든 모둠에 랜덤 4자리 번호 일괄 생성"
-                      >
-                        <Shuffle className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>랜덤 4자리 일괄 배정</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleBulkGenerateSequentialPasswords}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all cursor-pointer"
-                        title="학년/반/모둠 순서로 규칙성 있는 번호 일괄 배정 (예: 1101, 1102...)"
-                      >
-                        <Wand2 className="w-3.5 h-3.5 text-amber-600" />
-                        <span>규칙성 번호 배정 (1101...)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Filter & Password Grid in Topics Tab */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="font-semibold text-slate-700">주제 선택:</label>
-                      <select
-                        value={pwFilterTopic}
-                        onChange={(e) => setPwFilterTopic(e.target.value)}
-                        className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 cursor-pointer"
-                      >
-                        {topics.map((t) => (
-                          <option key={t.topicId} value={t.topicId}>
-                            [{t.topicId}] {t.title}
-                          </option>
-                        ))}
-                      </select>
-
-                      <label className="font-semibold text-slate-700 ml-2">학년:</label>
-                      <select
-                        value={pwFilterGrade}
-                        onChange={(e) => setPwFilterGrade(e.target.value)}
-                        className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium text-slate-800 cursor-pointer"
-                      >
-                        <option value="all">전체 학년</option>
-                        {topics.find((t) => t.topicId === pwFilterTopic)?.grades.map((g) => (
-                          <option key={g} value={g}>{g}</option>
-                        ))}
-                      </select>
-
-                      <label className="font-semibold text-slate-700 ml-2">반:</label>
-                      <select
-                        value={pwFilterClass}
-                        onChange={(e) => setPwFilterClass(e.target.value)}
-                        className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium text-slate-800 cursor-pointer"
-                      >
-                        <option value="all">전체 반</option>
-                        {topics.find((t) => t.topicId === pwFilterTopic)?.classes.map((c) => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setTopicsSubTab('passwords')}
-                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                    >
-                      전체 모둠 비밀번호 관리 탭으로 이동 ➔
-                    </button>
-                  </div>
-
-                  {/* Password Quick Table */}
-                  {(() => {
-                    const targetTopic = topics.find((t) => t.topicId === pwFilterTopic) || topics[0];
-                    if (!targetTopic) return null;
-
-                    const effectiveGrades = pwFilterGrade === 'all' ? targetTopic.grades : [pwFilterGrade];
-                    const effectiveClasses = pwFilterClass === 'all' ? targetTopic.classes : [pwFilterClass];
-
-                    const rows: Array<{
-                      key: string;
-                      grade: string;
-                      classNum: string;
-                      groupName: string;
-                      password?: string;
-                    }> = [];
-
-                    effectiveGrades.forEach((g) => {
-                      effectiveClasses.forEach((c) => {
-                        targetTopic.groups.forEach((grp) => {
-                          const key = getGroupPasswordKey(targetTopic.topicId, g, c, grp);
-                          rows.push({
-                            key,
-                            grade: g,
-                            classNum: c,
-                            groupName: grp,
-                            password: passwordsState[key]
-                          });
-                        });
-                      });
-                    });
-
-                    return (
-                      <div className="border border-slate-200 rounded-xl overflow-hidden mt-3 max-h-80 overflow-y-auto">
-                        <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-100 text-[11px] font-bold text-slate-600">
-                          <div className="col-span-3">소속 (학년/반)</div>
-                          <div className="col-span-3">모둠명</div>
-                          <div className="col-span-4">배정된 비밀번호</div>
-                          <div className="col-span-2 text-right">설정/수정</div>
-                        </div>
-
-                        <div className="divide-y divide-slate-100 text-xs">
-                          {rows.map((row) => (
-                            <div key={row.key} className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-slate-50">
-                              <div className="col-span-3 text-slate-600 font-medium">
-                                {row.grade} {row.classNum}
-                              </div>
-                              <div className="col-span-3 font-bold text-indigo-700">
-                                {row.groupName}
-                              </div>
-                              <div className="col-span-4">
-                                {row.password ? (
-                                  <span className="inline-flex items-center gap-1.5 font-mono font-bold bg-slate-900 text-emerald-400 px-2.5 py-0.5 rounded-md border border-slate-700 text-xs shadow-2xs">
-                                    <Lock className="w-3 h-3 text-emerald-400" />
-                                    <span>{row.password}</span>
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-slate-400 text-[11px] bg-slate-50 px-2 py-0.5 rounded-md border border-dashed border-slate-200">
-                                    <Unlock className="w-3 h-3 text-slate-400" />
-                                    <span>미배정</span>
-                                  </span>
-                                )}
-                              </div>
-                              <div className="col-span-2 flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingGroupPw({
-                                      key: row.key,
-                                      topicId: targetTopic.topicId,
-                                      grade: row.grade,
-                                      classNum: row.classNum,
-                                      groupName: row.groupName,
-                                      pw: row.password || ''
-                                    });
-                                  }}
-                                  className="px-2 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 border border-slate-200 rounded-md transition-colors cursor-pointer"
-                                  title="비밀번호 직접 수정"
-                                >
-                                  수정
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               </div>
             )}
@@ -2757,7 +2764,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleClearAllPasswords}
+                    onClick={handleRequestClearAllPasswords}
                     className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition-all cursor-pointer"
                     title="모든 모둠 비밀번호 초기화"
                   >
@@ -2979,7 +2986,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             isLoading={isSyncing}
           />
         )}
-      </div>
+          </div>
+        </div>
 
       {/* Global Edit Group Password Modal */}
         {editingGroupPw && (
@@ -3063,6 +3071,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           gasWebAppUrl={gasConfig.webAppUrl}
           topics={topics}
           currentTopicId={pwFilterTopic}
+        />
+
+        {/* Global Action Confirmation Modal */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={closeConfirm}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          description={confirmModal.description}
+          subWarning={confirmModal.subWarning}
+          confirmText={confirmModal.confirmText}
+          cancelText={confirmModal.cancelText}
+          variant={confirmModal.variant}
+          icon={confirmModal.icon}
         />
       </main>
     </div>

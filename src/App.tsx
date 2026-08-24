@@ -488,7 +488,6 @@ export default function App() {
         onSwitchGroup={handleSwitchGroup}
         onSave={handleSaveData}
         onOpenAllGroups={() => setIsAllGroupsOpen(true)}
-        onOpenTeacherMode={handleOpenTeacherAuth}
         onOpenReportPrint={() => setIsPrintModalOpen(true)}
         onResetData={handleResetData}
         isSaving={isSaving}
