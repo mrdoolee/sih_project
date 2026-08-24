@@ -370,20 +370,20 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Filter & Controls Card */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center">
               <FileCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <span>탐구 결과 확인 & 평가</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold">
                   교사 전용 대시보드
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs sm:text-sm text-slate-500">
                 모둠별 측정값, 회귀 분석 그래프, 학생 결론 답변을 통합 검토하고 채점 및 피드백을 기록합니다.
               </p>
             </div>
@@ -393,7 +393,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             <button
               type="button"
               onClick={handlePrintClassSummary}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
               title="학급 전체 모둠 제출현황 및 평가 취합표 인쇄"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -406,14 +406,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Topic Select */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 mb-1.5 block flex items-center gap-1">
-              <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
               <span>1. 탐구 주제</span>
             </label>
             <select
               value={selectedTopicId}
               onChange={(e) => setSelectedTopicId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
             >
               {topics.map((t) => (
                 <option key={t.topicId} value={t.topicId}>
@@ -425,14 +425,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
           {/* Grade Select */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 mb-1.5 block flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5 text-indigo-600" />
               <span>2. 학년</span>
             </label>
             <select
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
             >
               {currentTopic?.grades.map((g) => (
                 <option key={g} value={g}>
@@ -444,14 +444,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
           {/* Class Select */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 mb-1.5 block flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-indigo-600" />
               <span>3. 반</span>
             </label>
             <select
               value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
             >
               {currentTopic?.classes.map((c) => (
                 <option key={c} value={c}>
@@ -463,14 +463,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
           {/* Group Select */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 mb-1.5 block flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
               <span>4. 평가 대상 모둠</span>
             </label>
             <select
               value={selectedGroupName}
               onChange={(e) => setSelectedGroupName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
             >
               {currentTopic?.groups.map((grp) => {
                 const groupData = allGroupsData.find(
@@ -494,8 +494,8 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
         </div>
 
         {/* Group Tabs Pills */}
-        <div className="pt-2 flex items-center gap-2 overflow-x-auto pb-1">
-          <span className="text-xs text-slate-400 shrink-0 mr-1">모둠 바로가기:</span>
+        <div className="pt-2 flex items-center gap-2 overflow-x-auto pb-1 border-t border-slate-100">
+          <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">모둠 바로가기:</span>
           {currentTopic?.groups.map((grp) => {
             const isSelected = grp === selectedGroupName;
             const groupData = allGroupsData.find(
@@ -515,21 +515,21 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                 onClick={() => setSelectedGroupName(grp)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    ? 'bg-indigo-600 text-white shadow-xs'
                     : hasData
-                    ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
-                    : 'bg-slate-900/60 text-slate-500 hover:bg-slate-800 border border-slate-800'
+                    ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
                 }`}
               >
                 <span>{grp}</span>
                 {evalItem ? (
-                  <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] flex items-center justify-center font-bold">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     {evalItem.score || '✓'}
                   </span>
                 ) : hasData ? (
-                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
                 ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                 )}
               </button>
             );
@@ -542,17 +542,17 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
         {/* Left Column (8 cols): Student Submission (Measurements, Graph, Q&A) */}
         <div className="lg:col-span-7 space-y-6">
           {/* Header Summary for Current Group */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold text-sm border border-indigo-500/30">
+                <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm border border-indigo-200">
                   {selectedGrade} {selectedClass} {selectedGroupName}
                 </span>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500">
                   최종 제출: {currentGroupData?.lastSavedAt || '기록 없음'}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-white mt-1">
+              <h3 className="text-base font-bold text-slate-900 mt-1">
                 {currentTopic?.title}
               </h3>
             </div>
@@ -560,7 +560,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             <button
               type="button"
               onClick={handlePrintGroupReport}
-              className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>모둠 보고서 인쇄 / PDF</span>
@@ -568,36 +568,36 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           </div>
 
           {/* 1. Graph Visualizer */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-indigo-400" />
+              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <TrendingUp className="w-4 h-4 text-indigo-600" />
                 <span>모둠 실험 데이터 그래프 & 회귀선</span>
               </h4>
               {regressionResult && (
-                <div className="text-[11px] font-mono text-indigo-300 bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-800/60">
+                <div className="text-[11px] font-mono text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 font-semibold">
                   y = {regressionResult.slope}x {regressionResult.intercept >= 0 ? `+ ${regressionResult.intercept}` : `- ${Math.abs(regressionResult.intercept)}`} (R²={regressionResult.r2})
                 </div>
               )}
             </div>
 
             {chartData.length > 0 ? (
-              <div className="h-64 sm:h-72 w-full bg-slate-950 rounded-2xl p-2 border border-slate-800">
+              <div className="h-64 sm:h-72 w-full bg-slate-50/50 rounded-xl p-2 border border-slate-200">
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart margin={{ top: 20, right: 25, bottom: 25, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       type="number"
                       dataKey="x"
                       name={currentTopic?.xVarName || 'X'}
                       unit={currentTopic?.xUnit ? ` ${currentTopic.xUnit}` : ''}
-                      stroke="#94a3b8"
+                      stroke="#64748b"
                       fontSize={11}
                       label={{
                         value: `${currentTopic?.xVarName || 'X'}${currentTopic?.xUnit ? ` (${currentTopic.xUnit})` : ''}`,
                         position: 'bottom',
                         offset: 10,
-                        fill: '#94a3b8',
+                        fill: '#475569',
                         fontSize: 11
                       }}
                     />
@@ -606,14 +606,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       dataKey="y"
                       name={currentTopic?.yVarName || 'Y'}
                       unit={currentTopic?.yUnit ? ` ${currentTopic.yUnit}` : ''}
-                      stroke="#94a3b8"
+                      stroke="#64748b"
                       fontSize={11}
                       label={{
                         value: `${currentTopic?.yVarName || 'Y'}${currentTopic?.yUnit ? ` (${currentTopic.yUnit})` : ''}`,
                         angle: -90,
                         position: 'insideLeft',
                         offset: 0,
-                        fill: '#94a3b8',
+                        fill: '#475569',
                         fontSize: 11
                       }}
                     />
@@ -623,21 +623,21 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                         if (!payload || payload.length === 0) return null;
                         const data = payload[0].payload;
                         return (
-                          <div className="bg-slate-900 border border-slate-700 p-2.5 rounded-xl text-xs text-slate-200 shadow-xl">
-                            <p className="font-bold text-indigo-300">
+                          <div className="bg-white border border-slate-200 p-2.5 rounded-xl text-xs text-slate-800 shadow-lg">
+                            <p className="font-bold text-indigo-600">
                               {data.order ? `${data.order}차 측정` : '데이터점'}
                             </p>
                             <p>
-                              {currentTopic?.xVarName}: <span className="text-white font-mono">{data.x} {currentTopic?.xUnit}</span>
+                              {currentTopic?.xVarName}: <span className="text-slate-900 font-mono font-bold">{data.x} {currentTopic?.xUnit}</span>
                             </p>
                             <p>
-                              {currentTopic?.yVarName}: <span className="text-white font-mono">{data.y} {currentTopic?.yUnit}</span>
+                              {currentTopic?.yVarName}: <span className="text-slate-900 font-mono font-bold">{data.y} {currentTopic?.yUnit}</span>
                             </p>
                             {data.isOutlier && (
-                              <p className="text-rose-400 font-semibold mt-1">⚠️ 이상치 처리됨</p>
+                              <p className="text-rose-600 font-semibold mt-1">⚠️ 이상치 처리됨</p>
                             )}
                             {data.note && (
-                              <p className="text-slate-400 text-[11px] mt-0.5">메모: {data.note}</p>
+                              <p className="text-slate-500 text-[11px] mt-0.5">메모: {data.note}</p>
                             )}
                           </div>
                         );
@@ -646,7 +646,8 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                     <Scatter
                       name="측정값"
                       data={chartData}
-                      fill="#6366f1"
+                      fill="#4f46e5"
+                      isAnimationActive={false}
                       shape={(props: any) => {
                         const { cx, cy, payload } = props;
                         if (payload.isOutlier) {
@@ -657,7 +658,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                               r={6}
                               fill="#f43f5e"
                               stroke="#ffffff"
-                              strokeWidth={1.5}
+                              strokeWidth={2}
                             />
                           );
                         }
@@ -666,9 +667,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                             cx={cx}
                             cy={cy}
                             r={6}
-                            fill="#6366f1"
+                            fill="#4f46e5"
                             stroke="#ffffff"
-                            strokeWidth={1.5}
+                            strokeWidth={2}
                           />
                         );
                       }}
@@ -682,6 +683,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                         strokeWidth={2.5}
                         dot={false}
                         activeDot={false}
+                        isAnimationActive={false}
                         legendType="none"
                       />
                     )}
@@ -689,26 +691,26 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-44 bg-slate-950/60 rounded-2xl flex flex-col items-center justify-center text-slate-500 text-xs border border-dashed border-slate-800">
-                <Users className="w-6 h-6 mb-1 text-slate-600" />
+              <div className="h-44 bg-slate-50 rounded-xl flex flex-col items-center justify-center text-slate-500 text-xs border border-dashed border-slate-200">
+                <Users className="w-6 h-6 mb-1 text-slate-400" />
                 <span>해당 모둠에서 제출한 측정 데이터가 아직 없습니다.</span>
               </div>
             )}
           </div>
 
           {/* 2. Measurements Table */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
-            <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-indigo-400" />
+                <Layers className="w-4 h-4 text-indigo-600" />
                 <span>측정 데이터 기록표 ({currentGroupData?.points?.length || 0}회차)</span>
               </span>
             </h4>
 
             {currentGroupData?.points && currentGroupData.points.length > 0 ? (
-              <div className="overflow-x-auto rounded-2xl border border-slate-800">
-                <table className="w-full text-xs text-left text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 uppercase text-[11px] font-semibold border-b border-slate-800">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-xs text-left text-slate-700">
+                  <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] font-semibold border-b border-slate-200">
                     <tr>
                       <th className="py-2.5 px-3">차수</th>
                       <th className="py-2.5 px-3">{currentTopic?.xVarName} ({currentTopic?.xUnit})</th>
@@ -717,40 +719,40 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       <th className="py-2.5 px-3">측정 메모</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 bg-slate-900">
+                  <tbody className="divide-y divide-slate-100 bg-white">
                     {currentGroupData.points.map((p, idx) => (
-                      <tr key={p.id || idx} className="hover:bg-slate-800/40">
-                        <td className="py-2 px-3 font-mono text-indigo-300">{p.order || idx + 1}</td>
-                        <td className="py-2 px-3 font-mono font-medium text-white">{p.x}</td>
-                        <td className="py-2 px-3 font-mono font-medium text-white">{p.y}</td>
+                      <tr key={p.id || idx} className="hover:bg-slate-50/80">
+                        <td className="py-2 px-3 font-mono font-bold text-indigo-600">{p.order || idx + 1}</td>
+                        <td className="py-2 px-3 font-mono font-semibold text-slate-900">{p.x}</td>
+                        <td className="py-2 px-3 font-mono font-semibold text-slate-900">{p.y}</td>
                         <td className="py-2 px-3">
                           {p.isOutlier ? (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-semibold border border-rose-500/30">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-semibold border border-rose-200">
                               이상치 제외
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold border border-emerald-200">
                               유효 측정
                             </span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-slate-400 truncate max-w-xs">{p.note || '-'}</td>
+                        <td className="py-2 px-3 text-slate-600 truncate max-w-xs">{p.note || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-2xl">
+              <div className="py-8 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                 측정 데이터가 비어 있습니다.
               </div>
             )}
           </div>
 
           {/* 3. Student Conclusion & Report Q&A Answers */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
-            <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <MessageSquare className="w-4 h-4 text-indigo-400" />
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-indigo-600" />
               <span>학생 제출 결론 및 보고서 서술 답변</span>
             </h4>
 
@@ -776,23 +778,23 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       return (
                         <div
                           key={q.id || idx}
-                          className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2"
+                          className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2"
                         >
                           <div className="flex items-start gap-2">
-                            <span className="px-2 py-0.5 bg-indigo-600/30 text-indigo-300 rounded-lg text-xs font-bold shrink-0">
+                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-bold shrink-0">
                               문항 {idx + 1}
                             </span>
                             <div>
-                              <p className="text-xs font-bold text-slate-200">{q.title}</p>
-                              <p className="text-[11px] text-slate-400 mt-0.5">{q.question}</p>
+                              <p className="text-xs font-bold text-slate-900">{q.title}</p>
+                              <p className="text-[11px] text-slate-600 mt-0.5">{q.question}</p>
                             </div>
                           </div>
 
-                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800/80 text-xs text-slate-100 whitespace-pre-wrap leading-relaxed">
+                          <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed shadow-2xs">
                             {ans ? (
                               <span>{ans}</span>
                             ) : (
-                              <span className="text-slate-500 italic">학생이 작성한 답변이 없습니다.</span>
+                              <span className="text-slate-400 italic">학생이 작성한 답변이 없습니다.</span>
                             )}
                           </div>
                         </div>
@@ -803,27 +805,27 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               }
               return (
                 <div className="space-y-3">
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5">
-                    <span className="text-xs font-bold text-indigo-400">[1. 자료 해석 및 규칙성]</span>
-                    <div className="p-3 bg-slate-900 rounded-xl text-xs text-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-xs font-bold text-indigo-700">[1. 자료 해석 및 규칙성]</span>
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 shadow-2xs">
                       {currentGroupData?.conclusionNotes?.summary || (
-                        <span className="text-slate-500 italic">답변 없음</span>
+                        <span className="text-slate-400 italic">답변 없음</span>
                       )}
                     </div>
                   </div>
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5">
-                    <span className="text-xs font-bold text-indigo-400">[2. 과학적 개념 및 원리 도출]</span>
-                    <div className="p-3 bg-slate-900 rounded-xl text-xs text-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-xs font-bold text-indigo-700">[2. 과학적 개념 및 원리 도출]</span>
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 shadow-2xs">
                       {currentGroupData?.conclusionNotes?.principle || (
-                        <span className="text-slate-500 italic">답변 없음</span>
+                        <span className="text-slate-400 italic">답변 없음</span>
                       )}
                     </div>
                   </div>
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5">
-                    <span className="text-xs font-bold text-indigo-400">[3. 오차 분석 및 토의]</span>
-                    <div className="p-3 bg-slate-900 rounded-xl text-xs text-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <span className="text-xs font-bold text-indigo-700">[3. 오차 분석 및 토의]</span>
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 shadow-2xs">
                       {currentGroupData?.conclusionNotes?.errorAnalysis || (
-                        <span className="text-slate-500 italic">답변 없음</span>
+                        <span className="text-slate-400 italic">답변 없음</span>
                       )}
                     </div>
                   </div>
@@ -835,36 +837,36 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
         {/* Right Column (5 cols): Teacher Evaluation & Feedback Panel (Compact & Sticky Fixed) */}
         <div className="lg:col-span-5">
-          <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3.5 sticky top-4 self-start">
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4 sticky top-4 self-start">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                  <Award className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center">
+                  <Award className="w-4.5 h-4.5" />
                 </div>
                 <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-white">모둠 평가 & 피드백 작성</h3>
-                  <p className="text-[10px] text-slate-400">
-                    {selectedGrade} {selectedClass} {selectedGroupName} | 환산 총점: <span className="font-bold text-indigo-400">{scaledScore100}점</span> ({totalRubricScore}/25)
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900">모둠 평가 & 피드백 작성</h3>
+                  <p className="text-[11px] text-slate-500">
+                    {selectedGrade} {selectedClass} {selectedGroupName} | 환산 총점: <span className="font-bold text-indigo-600">{scaledScore100}점</span> ({totalRubricScore}/25)
                   </p>
                 </div>
               </div>
 
               {existingEval && (
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
-                  <CheckCircle className="w-2.5 h-2.5" /> 평가완료
+                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> 평가완료
                 </span>
               )}
             </div>
 
             {/* Score / Grade Selection */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold text-slate-300">
+                <label className="text-[11px] font-bold text-slate-700">
                   1. 종합 성취도 등급
                 </label>
-                <span className="text-[10px] font-bold text-indigo-300">현재: {formScore}</span>
+                <span className="text-[11px] font-bold text-indigo-600">현재: {formScore}</span>
               </div>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-5 gap-1.5">
                 {['A+', 'A', 'B', 'C', '재시도'].map((grade) => (
                   <button
                     key={grade}
@@ -872,8 +874,8 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                     onClick={() => setFormScore(grade)}
                     className={`py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
                       formScore === grade
-                        ? 'bg-indigo-600 text-white shadow-xs scale-102'
-                        : 'bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
                     }`}
                   >
                     {grade}
@@ -883,15 +885,15 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             </div>
 
             {/* 5 Rubric Criteria Sliders/Rating (Separated into 4. Error Analysis & 5. Attitude) */}
-            <div className="space-y-1.5 pt-0.5">
-              <label className="text-[11px] font-bold text-slate-300 block">
+            <div className="space-y-2 pt-1">
+              <label className="text-[11px] font-bold text-slate-700 block">
                 2. 5대 탐구 역량 루브릭 채점 (각 1~5점)
               </label>
 
               {/* 1. Accuracy */}
-              <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-semibold text-slate-300 truncate block">1. 데이터 측정·기록</span>
+                  <span className="text-[11px] font-semibold text-slate-800 truncate block">1. 데이터 측정·기록</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {[1, 2, 3, 4, 5].map((val) => (
@@ -902,7 +904,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       className={`w-6 h-6 rounded-md text-[10px] font-bold cursor-pointer transition-all ${
                         formAccuracy === val
                           ? 'bg-indigo-600 text-white shadow-2xs'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                          : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                       }`}
                     >
                       {val}
@@ -912,9 +914,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               </div>
 
               {/* 2. Graph Interpretation */}
-              <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-semibold text-slate-300 truncate block">2. 그래프·규칙성 해석</span>
+                  <span className="text-[11px] font-semibold text-slate-800 truncate block">2. 그래프·규칙성 해석</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {[1, 2, 3, 4, 5].map((val) => (
@@ -925,7 +927,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       className={`w-6 h-6 rounded-md text-[10px] font-bold cursor-pointer transition-all ${
                         formInterpretation === val
                           ? 'bg-indigo-600 text-white shadow-2xs'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                          : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                       }`}
                     >
                       {val}
@@ -935,9 +937,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               </div>
 
               {/* 3. Scientific Reasoning */}
-              <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-semibold text-slate-300 truncate block">3. 과학적 결론 도출</span>
+                  <span className="text-[11px] font-semibold text-slate-800 truncate block">3. 과학적 결론 도출</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {[1, 2, 3, 4, 5].map((val) => (
@@ -948,7 +950,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       className={`w-6 h-6 rounded-md text-[10px] font-bold cursor-pointer transition-all ${
                         formReasoning === val
                           ? 'bg-indigo-600 text-white shadow-2xs'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                          : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                       }`}
                     >
                       {val}
@@ -958,9 +960,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               </div>
 
               {/* 4. Error Analysis (Separated) */}
-              <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-semibold text-amber-300 truncate block">4. 오차 원인 분석</span>
+                  <span className="text-[11px] font-semibold text-amber-800 truncate block">4. 오차 원인 분석</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {[1, 2, 3, 4, 5].map((val) => (
@@ -971,7 +973,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       className={`w-6 h-6 rounded-md text-[10px] font-bold cursor-pointer transition-all ${
                         formErrorAnalysis === val
                           ? 'bg-amber-600 text-white shadow-2xs'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                          : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                       }`}
                     >
                       {val}
@@ -981,9 +983,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               </div>
 
               {/* 5. Attitude (Separated) */}
-              <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-semibold text-emerald-300 truncate block">5. 탐구 태도 & 협동</span>
+                  <span className="text-[11px] font-semibold text-emerald-800 truncate block">5. 탐구 태도 & 협동</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {[1, 2, 3, 4, 5].map((val) => (
@@ -994,7 +996,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       className={`w-6 h-6 rounded-md text-[10px] font-bold cursor-pointer transition-all ${
                         formAttitude === val
                           ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                          : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                       }`}
                     >
                       {val}
@@ -1006,7 +1008,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
             {/* Detailed Teacher Feedback Comment */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-300 block">
+              <label className="text-[11px] font-bold text-slate-700 block">
                 3. 교사 맞춤 피드백 및 총평
               </label>
               <textarea
@@ -1014,29 +1016,29 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                 onChange={(e) => setFormFeedback(e.target.value)}
                 placeholder="모둠 학생들에게 전달할 격려와 보완할 오차 분석/개념 피드백을 입력하세요..."
                 rows={3}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 leading-relaxed resize-none"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 focus:bg-white leading-relaxed resize-none"
               />
             </div>
 
             {/* Evaluator name */}
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 shrink-0">평가자:</span>
+              <span className="text-[11px] font-semibold text-slate-600 shrink-0">평가자:</span>
               <input
                 type="text"
                 value={formEvaluator}
                 onChange={(e) => setFormEvaluator(e.target.value)}
                 placeholder="과학교사"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
 
             {/* Save Message Banner */}
             {saveMessage && (
               <div
-                className={`p-2 rounded-xl text-xs font-medium ${
+                className={`p-2.5 rounded-xl text-xs font-semibold ${
                   saveMessage.type === 'success'
-                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-rose-50 text-rose-800 border border-rose-200'
                 }`}
               >
                 {saveMessage.text}
@@ -1049,7 +1051,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               id="btn-save-group-eval"
               onClick={handleRequestSaveEvaluation}
               disabled={isSavingEval}
-              className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
+              className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50"
             >
               {isSavingEval ? (
                 <>
