@@ -37,7 +37,9 @@ export async function exportReportToPDF(
   const contentWidth = pageWidth - (margin * 2);
   const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
-  if (contentHeight <= pageHeight - (margin * 2)) {
+  const usablePageHeight = pageHeight - (margin * 2);
+
+  if (contentHeight <= usablePageHeight) {
     pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
   } else {
     // Multi-page handling if content exceeds one A4 page
@@ -46,13 +48,13 @@ export async function exportReportToPDF(
     let page = 1;
 
     pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-    heightLeft -= (pageHeight - (margin * 2));
+    heightLeft -= usablePageHeight;
 
     while (heightLeft > 0) {
-      position = -(pageHeight * page) + margin;
+      position = margin - (usablePageHeight * page);
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-      heightLeft -= pageHeight;
+      heightLeft -= usablePageHeight;
       page++;
     }
   }

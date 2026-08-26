@@ -52,6 +52,7 @@ export const StudentShareLayer: React.FC<StudentShareLayerProps> = ({
   // Generate QR Code image data
   useEffect(() => {
     if (!studentShareUrl) return;
+    let cancelled = false;
     QRCode.toDataURL(studentShareUrl, {
       width: 480,
       margin: 2,
@@ -61,8 +62,13 @@ export const StudentShareLayer: React.FC<StudentShareLayerProps> = ({
       },
       errorCorrectionLevel: 'M'
     })
-      .then((url) => setQrDataUrl(url))
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
       .catch((err) => console.error('QR code generation error:', err));
+    return () => {
+      cancelled = true;
+    };
   }, [studentShareUrl]);
 
   const handleCopyLink = () => {
@@ -154,10 +160,52 @@ export const StudentShareLayer: React.FC<StudentShareLayerProps> = ({
         )}
       </div>
 
-      {/* Main Two-Column Card Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Interactive Classroom QR Code (5 Cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
+      {/* Vertical stack: URL -> QR -> Classroom guide */}
+      <div className="space-y-6">
+        {/* 1. Direct URL Distribution Card */}
+        <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+          <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Link className="w-4 h-4 text-indigo-600" />
+            <span>학생 배부용 전용 다이렉트 URL</span>
+          </h4>
+
+          <p className="text-xs text-slate-600">
+            구글 클래스룸, e학습터, 카카오톡, 패들렛, 학교 홈페이지 등에 아래 링크를 게시하세요.
+          </p>
+
+          <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={studentShareUrl}
+              className="w-full bg-transparent text-xs text-indigo-200 font-mono focus:outline-none select-all px-2 truncate"
+            />
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              title="URL 클립보드에 복사"
+            >
+              {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+              <span>{isCopied ? '복사 완료!' : 'URL 복사'}</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 pt-2">
+            <a
+              href={studentShareUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+              <span>새 탭에서 학생 화면 미리보기</span>
+            </a>
+          </div>
+        </div>
+
+        {/* 2. Interactive Classroom QR Code */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
             <Smartphone className="w-3.5 h-3.5" />
             <span>스마트폰 / 태블릿 카메라 스캔</span>
@@ -195,95 +243,41 @@ export const StudentShareLayer: React.FC<StudentShareLayerProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Link Details & Distribution Actions (7 Cols) */}
-        <div className="lg:col-span-7 space-y-5">
-          {/* Direct URL Distribution Card */}
-          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
-            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Link className="w-4 h-4 text-indigo-600" />
-              <span>학생 배부용 전용 다이렉트 URL</span>
-            </h4>
+        {/* 3. Classroom Flow Guide */}
+        <div className="bg-white text-slate-700 rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+          <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>실제 수업 진행 가이드 (3단계)</span>
+          </h4>
 
-            <p className="text-xs text-slate-600">
-              구글 클래스룸, e학습터, 카카오톡, 패들렛, 학교 홈페이지 등에 아래 링크를 게시하세요.
-            </p>
-
-            <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={studentShareUrl}
-                className="w-full bg-transparent text-xs text-indigo-200 font-mono focus:outline-none select-all px-2 truncate"
-              />
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                title="URL 클립보드에 복사"
-              >
-                {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                <span>{isCopied ? '복사 완료!' : 'URL 복사'}</span>
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+              <div className="font-bold text-indigo-700">1단계: QR 비추기</div>
+              <p className="text-slate-600 leading-relaxed">
+                교실 빔프로젝터에 띄워진 QR코드를 모둠 태블릿 카메라로 스캔합니다.
+              </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 pt-2">
-              <a
-                href={studentShareUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
-                <span>새 탭에서 학생 화면 미리보기</span>
-              </a>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+              <div className="font-bold text-emerald-700">2단계: 모둠 선택 & 비번</div>
+              <p className="text-slate-600 leading-relaxed">
+                자신의 탐구 주제, 학년/반/모둠을 고르고 모둠 배부 비밀번호를 입력합니다.
+              </p>
+            </div>
 
-              <button
-                type="button"
-                onClick={handlePrintQRSheet}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                <span>A4 인쇄용 유인물 출력</span>
-              </button>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+              <div className="font-bold text-amber-700">3단계: 실시간 집계</div>
+              <p className="text-slate-600 leading-relaxed">
+                학생들이 측정한 데이터와 보고서가 선생님 스프레드시트에 자동 수합됩니다.
+              </p>
             </div>
           </div>
 
-          {/* Classroom Flow Guide */}
-          <div className="bg-slate-900 text-slate-200 rounded-2xl p-5 sm:p-6 border border-slate-800 shadow-md space-y-4">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>실제 수업 진행 가이드 (3단계)</span>
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 space-y-1">
-                <div className="font-bold text-indigo-300">1단계: QR 비추기</div>
-                <p className="text-slate-400 leading-relaxed">
-                  교실 빔프로젝터에 띄워진 QR코드를 모둠 태블릿 카메라로 스캔합니다.
-                </p>
-              </div>
-
-              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 space-y-1">
-                <div className="font-bold text-emerald-300">2단계: 모둠 선택 & 비번</div>
-                <p className="text-slate-400 leading-relaxed">
-                  자신의 탐구 주제, 학년/반/모둠을 고르고 모둠 배부 비밀번호를 입력합니다.
-                </p>
-              </div>
-
-              <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 space-y-1">
-                <div className="font-bold text-amber-300">3단계: 실시간 집계</div>
-                <p className="text-slate-400 leading-relaxed">
-                  학생들이 측정한 데이터와 보고서가 선생님 스프레드시트에 자동 수합됩니다.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-start gap-2">
-              <HelpCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-              <span>
-                <strong>Tip:</strong> 학생 기기에 처음 접속하면 해당 브라우저에 구글 시트 연동 정보가 로컬 저장되므로, 다음 차시 수업에서도 재설정 없이 즉시 이어갈 수 있습니다.
-              </span>
-            </div>
+          <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 text-[11px] text-slate-600 flex items-start gap-2">
+            <HelpCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+            <span>
+              <strong className="text-slate-800">Tip:</strong> 학생 기기에 처음 접속하면 해당 브라우저에 구글 시트 연동 정보가 로컬 저장되므로, 다음 차시 수업에서도 재설정 없이 즉시 이어갈 수 있습니다.
+            </span>
           </div>
         </div>
       </div>

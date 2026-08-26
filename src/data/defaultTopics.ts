@@ -169,6 +169,13 @@ export const DEFAULT_TOPICS: TopicConfig[] = [
   }
 ];
 
+/**
+ * Topic ids that ship with hard-coded demo measurements in App.tsx's
+ * handleLoadSample. A topic the teacher creates has no meaningful sample data,
+ * so the student-facing [예시값] button is disabled for anything not listed here.
+ */
+export const SAMPLE_DATA_TOPIC_IDS = DEFAULT_TOPICS.map((t) => t.topicId);
+
 // Rich sample mock data for all groups so preview and class comparison look brilliant immediately
 export const SAMPLE_ALL_GROUPS_DATA: Record<string, GroupExperimentData[]> = {
   'EXP_01-2학년-3반': [

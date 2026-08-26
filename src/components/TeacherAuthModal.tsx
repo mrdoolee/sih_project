@@ -10,24 +10,30 @@ import {
   KeyRound
 } from 'lucide-react';
 import { TeacherSettingsConfig } from '../types';
+import { verifyTeacherPasswordOnGAS } from '../utils/gasService';
 
 interface TeacherAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
   teacherSettings: TeacherSettingsConfig;
+  webAppUrl?: string;
+  onPasswordVerified?: (password: string) => void;
 }
 
 export const TeacherAuthModal: React.FC<TeacherAuthModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  teacherSettings
+  teacherSettings,
+  webAppUrl,
+  onPasswordVerified
 }) => {
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -42,7 +48,7 @@ export const TeacherAuthModal: React.FC<TeacherAuthModalProps> = ({
 
   const currentMasterPassword = (teacherSettings.teacherPassword || '0000').trim();
 
-  const handleVerify = (e?: React.FormEvent) => {
+  const handleVerify = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
@@ -56,11 +62,25 @@ export const TeacherAuthModal: React.FC<TeacherAuthModalProps> = ({
 
     if (inputTrimmed === currentMasterPassword) {
       onSuccess();
-    } else {
-      setErrorMsg('비밀번호가 일치하지 않습니다. 메뉴 2(환경설정)에서 설정한 비밀번호를 입력하세요.');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
+      return;
     }
+
+    // Local cache may be stale (new device/browser after a password change
+    // elsewhere) - confirm against the spreadsheet before rejecting.
+    if (webAppUrl) {
+      setIsVerifying(true);
+      const valid = await verifyTeacherPasswordOnGAS(inputTrimmed, webAppUrl);
+      setIsVerifying(false);
+      if (valid) {
+        onPasswordVerified?.(inputTrimmed);
+        onSuccess();
+        return;
+      }
+    }
+
+    setErrorMsg('비밀번호가 일치하지 않습니다. 메뉴 2(환경설정)에서 설정한 비밀번호를 입력하세요.');
+    setIsShaking(true);
+    setTimeout(() => setIsShaking(false), 500);
   };
 
   return (
@@ -155,9 +175,10 @@ export const TeacherAuthModal: React.FC<TeacherAuthModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isVerifying}
+              className="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <span>인증 및 입장</span>
+              <span>{isVerifying ? '확인 중...' : '인증 및 입장'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

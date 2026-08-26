@@ -24,6 +24,7 @@ import {
   fetchTeacherSettingsFromGAS
 } from './utils/gasService';
 import { parseDistributionParams } from './utils/distributionHelper';
+import { SAMPLE_DATA_TOPIC_IDS } from './data/defaultTopics';
 import { computeTrendline } from './utils/mathAnalysis';
 import { Header } from './components/Header';
 import { DataTable } from './components/DataTable';
@@ -34,6 +35,7 @@ import { PrintableReportModal } from './components/PrintableReportModal';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { IndexSelectionScreen } from './components/IndexSelectionScreen';
 import { TeacherAuthModal } from './components/TeacherAuthModal';
+import { CreditFooter } from './components/CreditFooter';
 
 export default function App() {
   // Page Routing: 'teacher' (default index) or 'student' (accessed via distributed link ?mode=student or explicit button)
@@ -52,6 +54,17 @@ export default function App() {
     // Default entry (index) is Teacher Console
     return 'teacher';
   });
+
+  // Normalize the bare index URL to the explicit teacher console URL (?page=teacher)
+  // so that the entry point of the web app is unambiguous and shareable.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasRoutingParam =
+      params.has('mode') || params.has('page') || params.has('topic') || params.has('group');
+    if (!hasRoutingParam && !window.location.hash) {
+      window.history.replaceState({}, '', `${window.location.pathname}?page=teacher`);
+    }
+  }, []);
 
   // Teacher Authentication Modal State (Required when entering teacher console from student view)
   const [isTeacherAuthOpen, setIsTeacherAuthOpen] = useState<boolean>(false);
@@ -204,6 +217,14 @@ export default function App() {
 
     const result = await saveGroupData(currentGroupData, gasConfig.webAppUrl);
     setIsSaving(false);
+    showToast(result.message);
+
+    if (!result.success) {
+      // Save actually failed - keep the unsaved-changes flag so the student
+      // knows to retry instead of believing the data is safely stored.
+      return;
+    }
+
     setHasUnsavedChanges(false);
     setLastSavedAt(currentGroupData.lastSavedAt);
 
@@ -216,7 +237,6 @@ export default function App() {
     );
     setAllGroupsData(updatedClassList);
 
-    showToast(result.message);
     confetti({
       particleCount: 40,
       spread: 60,
@@ -373,6 +393,16 @@ export default function App() {
     return computeTrendline(selectedTrendline, points);
   }, [selectedTrendline, points]);
 
+  // Must be a stable reference: ManualGraphCanvas has an effect that depends on
+  // this callback and fires it on every change. A fresh inline function here on
+  // every render would make that effect's dependency change every render too,
+  // which calls setManualGraphData -> re-render -> new inline function -> refire,
+  // an infinite render loop (confirmed pre-existing, not just theoretical).
+  const handleChangeManualGraphData = useCallback((mgData: GroupExperimentData['manualGraphData']) => {
+    setManualGraphData(mgData);
+    setHasUnsavedChanges(true);
+  }, []);
+
   const activeGroupData: GroupExperimentData = useMemo(() => ({
     topicId: selectedTopicId,
     grade: selectedGrade,
@@ -397,6 +427,12 @@ export default function App() {
         }}
         topics={topics}
         onSaveTopics={(tList) => {
+          // Refuse an empty topic list - it would make currentTopic undefined
+          // everywhere below and crash the student app on the next render.
+          if (!tList || tList.length === 0) {
+            showToast('탐구 주제 목록은 최소 1개 이상이어야 합니다.');
+            return;
+          }
           setTopics(tList);
           saveStoredTopics(tList);
           showToast('탐구 주제 목록이 저장되었습니다.');
@@ -411,10 +447,7 @@ export default function App() {
         isSyncing={isSyncing}
         onBackToStudent={() => {
           setCurrentPage('student');
-          // Clear query params if any
-          if (window.location.search.includes('teacher') || window.location.hash.includes('teacher')) {
-            window.history.replaceState({}, '', window.location.pathname);
-          }
+          window.history.replaceState({}, '', `${window.location.pathname}?mode=student`);
         }}
       />
     );
@@ -440,6 +473,12 @@ export default function App() {
           onClose={() => setIsTeacherAuthOpen(false)}
           onSuccess={handleTeacherAuthSuccess}
           teacherSettings={teacherSettings}
+          webAppUrl={gasConfig.webAppUrl}
+          onPasswordVerified={(pw) => {
+            const updated = { ...teacherSettings, teacherPassword: pw };
+            setTeacherSettings(updated);
+            saveStoredTeacherSettings(updated);
+          }}
         />
       </>
     );
@@ -511,6 +550,7 @@ export default function App() {
                 setHasUnsavedChanges(true);
               }}
               onLoadSample={handleLoadSample}
+              canLoadSample={SAMPLE_DATA_TOPIC_IDS.includes(selectedTopicId)}
             />
           </div>
 
@@ -522,10 +562,7 @@ export default function App() {
               points={points}
               selectedTrendline={selectedTrendline}
               manualGraphData={manualGraphData}
-              onChangeManualGraphData={(mgData) => {
-                setManualGraphData(mgData);
-                setHasUnsavedChanges(true);
-              }}
+              onChangeManualGraphData={handleChangeManualGraphData}
               allowAutoAnalysis={teacherSettings.allowAutoAnalysis}
               onChangeTrendline={(t) => {
                 setSelectedTrendline(t);
@@ -545,15 +582,12 @@ export default function App() {
               setConclusionNotes(notes);
               setHasUnsavedChanges(true);
             }}
-            onPrint={() => setIsPrintModalOpen(true)}
           />
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500 no-print">
-        <p>과학 탐구 보고서 작성 도움 웹앱 · Google Apps Script & 스프레드시트 기반 데이터 통합 시스템</p>
-      </footer>
+      <CreditFooter variant="light" singleLine />
 
       {/* Modals */}
       <AllGroupsModal

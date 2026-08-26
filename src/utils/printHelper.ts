@@ -13,13 +13,13 @@ export function printElement(
   target: HTMLElement | string,
   options: PrintOptions = {}
 ): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
       const element = typeof target === 'string' ? document.getElementById(target) : target;
       if (!element) {
         console.warn(`Print target not found: ${target}`);
         window.print();
-        resolve(false);
+        reject(new Error(`Print target not found: ${target}`));
         return;
       }
 
@@ -52,7 +52,7 @@ export function printElement(
         // Fallback to window.print
         window.print();
         if (document.body.contains(iframe)) document.body.removeChild(iframe);
-        resolve(true);
+        reject(new Error('Print iframe document unavailable'));
         return;
       }
 
@@ -92,7 +92,7 @@ export function printElement(
           </style>
         </head>
         <body class="bg-white text-slate-900 p-2 sm:p-4">
-          <div class="print-container">
+          <div class="print-container"${element.id ? ` id="${element.id}"` : ''}>
             ${element.innerHTML}
           </div>
         </body>
@@ -108,7 +108,7 @@ export function printElement(
         } catch (err) {
           console.warn('Iframe print failed, falling back to top window.print:', err);
           window.print();
-          resolve(false);
+          reject(err instanceof Error ? err : new Error('Iframe print failed'));
         } finally {
           setTimeout(() => {
             if (document.body.contains(iframe)) {
@@ -123,7 +123,7 @@ export function printElement(
     } catch (error) {
       console.error('Error initiating print:', error);
       window.print();
-      resolve(false);
+      reject(error instanceof Error ? error : new Error('Error initiating print'));
     }
   });
 }
@@ -172,7 +172,7 @@ export function openPrintWindow(target: HTMLElement | string, title: string = 'ì
       </style>
     </head>
     <body>
-      <div>${element.innerHTML}</div>
+      <div${element.id ? ` id="${element.id}"` : ''}>${element.innerHTML}</div>
       <script>
         window.addEventListener('load', () => {
           setTimeout(() => {

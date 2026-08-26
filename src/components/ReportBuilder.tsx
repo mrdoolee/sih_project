@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   FileText,
-  Printer,
   Sparkles,
   HelpCircle,
   ChevronDown,
@@ -14,7 +13,6 @@ interface ReportBuilderProps {
   groupData: GroupExperimentData;
   trendResult: TrendlineResult;
   onChangeNotes: (notes: GroupExperimentData['conclusionNotes']) => void;
-  onPrint: () => void;
 }
 
 const STEP_BADGE_COLORS = [
@@ -31,8 +29,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({
   topic,
   groupData,
   trendResult,
-  onChangeNotes,
-  onPrint
+  onChangeNotes
 }) => {
   const [showHints, setShowHints] = useState(true);
 
@@ -45,13 +42,26 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({
 
   const reportQuestions = getEffectiveReportQuestions(topic);
 
+  // The legacy summary/principle/errorAnalysis fields only ever represented
+  // exactly 3 fixed questions (자료해석/원리/오차분석 in that order). That
+  // mapping is meaningless for topics with a different question count/order
+  // (e.g. EXP_02 has 4 questions where index 2 is "입자 운동 관점 해석", not
+  // error analysis) - syncing by position there silently mislabels answers.
+  // notes.answers (keyed by question id) is the authoritative source for
+  // every topic; the legacy fields are only kept in sync for the classic
+  // 3-question shape so old exports/printouts that still read them directly
+  // keep working.
+  const useLegacyPositionalSync = reportQuestions.length === 3;
+
   const getAnswerValue = (qId: string, idx: number): string => {
     if (notes.answers && notes.answers[qId] !== undefined) {
       return notes.answers[qId];
     }
-    if (idx === 0 && notes.summary) return notes.summary;
-    if (idx === 1 && notes.principle) return notes.principle;
-    if (idx === 2 && notes.errorAnalysis) return notes.errorAnalysis;
+    if (useLegacyPositionalSync) {
+      if (idx === 0 && notes.summary) return notes.summary;
+      if (idx === 1 && notes.principle) return notes.principle;
+      if (idx === 2 && notes.errorAnalysis) return notes.errorAnalysis;
+    }
     return '';
   };
 
@@ -66,9 +76,11 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({
       answers: updatedAnswers
     };
 
-    if (idx === 0) updatedNotes.summary = value;
-    if (idx === 1) updatedNotes.principle = value;
-    if (idx === 2) updatedNotes.errorAnalysis = value;
+    if (useLegacyPositionalSync) {
+      if (idx === 0) updatedNotes.summary = value;
+      if (idx === 1) updatedNotes.principle = value;
+      if (idx === 2) updatedNotes.errorAnalysis = value;
+    }
 
     onChangeNotes(updatedNotes);
   };
@@ -100,17 +112,6 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>도움말/힌트</span>
             {showHints ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
-          <button
-            id="btn-report-builder-print"
-            type="button"
-            onClick={onPrint}
-            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-md transition-colors shadow-2xs cursor-pointer"
-            title="PDF 다운로드 및 인쇄 창 열기"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>보고서 PDF 저장 / 인쇄</span>
           </button>
         </div>
       </div>

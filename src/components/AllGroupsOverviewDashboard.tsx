@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import {
   TopicConfig,
   GroupExperimentData,
-  DataPoint
+  DataPoint,
+  getEffectiveReportQuestions
 } from '../types';
 import { getStoredEvaluations } from '../utils/gasService';
 import { printElement } from '../utils/printHelper';
@@ -26,15 +27,16 @@ import {
 } from 'lucide-react';
 import {
   ResponsiveContainer,
-  ScatterChart,
+  ComposedChart,
   Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
+  ReferenceLine,
   Line
 } from 'recharts';
+import { filterValidPoints, computeTrendline } from '../utils/mathAnalysis';
 
 interface AllGroupsOverviewDashboardProps {
   topics: TopicConfig[];
@@ -85,6 +87,11 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   // Current stored evaluations
   const evaluations = useMemo(() => getStoredEvaluations(), []);
 
+  // Report questions actually configured for this topic (falls back to the 3 defaults)
+  const reportQuestions = useMemo(() => {
+    return currentTopic ? getEffectiveReportQuestions(currentTopic) : [];
+  }, [currentTopic]);
+
   // Filter groups for selected Topic, Grade, Class
   const classGroupsList = useMemo(() => {
     return allGroupsData.filter(
@@ -124,7 +131,11 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     const total = expectedGroups.length;
     const submitted = fullGroupsData.filter((g) => g.isSubmitted).length;
     const evaluated = fullGroupsData.filter((g) => !!g.evaluation?.score).length;
-    const totalPoints = fullGroupsData.reduce((acc, g) => acc + g.pointCount, 0);
+    // Outlier-flagged rows are not usable measurements, so they don't count here.
+    const totalPoints = fullGroupsData.reduce(
+      (acc, g) => acc + filterValidPoints(g.data?.points || []).length,
+      0
+    );
     const avgPoints = submitted > 0 ? (totalPoints / submitted).toFixed(1) : '0';
     return { total, submitted, evaluated, avgPoints };
   }, [expectedGroups, fullGroupsData]);
@@ -137,7 +148,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
       '모둠명',
       '제출상태',
       '데이터수',
-      `측정데이터(${currentTopic?.xName || 'X'} / ${currentTopic?.yName || 'Y'})`,
+      `측정데이터(${currentTopic?.xVarName || 'X'} / ${currentTopic?.yVarName || 'Y'})`,
       '선택추세선',
       '결론요약',
       '오차원인분석',
@@ -147,7 +158,8 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
 
     const rows = fullGroupsData.map((item) => {
       const g = item.data;
-      const ptsStr = g?.points?.map((p) => `(${p.x}, ${p.y})`).join('; ') || '없음';
+      const ptsStr =
+        g?.points?.map((p) => `(${p.x}, ${p.y})${p.isOutlier ? '[이상치]' : ''}`).join('; ') || '없음';
       return [
         selectedGrade,
         selectedClass,
@@ -174,30 +186,94 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     document.body.removeChild(link);
   };
 
-  // Print Report
+  // Print Report - the master table and the matrix are both wide, so they only
+  // fit an A4 sheet in landscape with the horizontal scroll containers unlocked.
   const handlePrint = () => {
     printElement('all-groups-overview-printable', {
-      title: `${currentTopic?.title} - ${selectedGrade} ${selectedClass} 전체 모둠 탐구 결과표`
+      title: `${currentTopic?.title} - ${selectedGrade} ${selectedClass} 전체 모둠 탐구 결과표`,
+      pageOrientation: 'landscape',
+      margin: '8mm'
     });
   };
 
-  // Prepare Chart Multi-Series Data
-  const chartDataSeries = useMemo(() => {
-    return fullGroupsData
-      .filter((g) => g.isSubmitted && g.data && g.data.points.length > 0)
-      .map((g, idx) => {
-        const color = GROUP_COLORS[g.groupName] || COLOR_PALETTE[idx % COLOR_PALETTE.length];
-        return {
-          groupName: g.groupName,
-          color,
-          points: (g.data?.points || []).map((p) => ({
-            x: p.x,
-            y: p.y,
-            group: g.groupName
-          }))
-        };
+  // Per-group metrics. Outliers the students flagged are excluded from the
+  // regression and from every "valid" count, exactly like the student-side view.
+  const groupMetrics = useMemo(() => {
+    return fullGroupsData.map((g, idx) => {
+      const rawPoints = g.data?.points || [];
+      const valid = filterValidPoints(rawPoints);
+      const outliers = rawPoints.filter(
+        (p) => p.isOutlier && p.x !== '' && p.y !== '' && !isNaN(Number(p.x)) && !isNaN(Number(p.y))
+      );
+      const trendType = g.data?.selectedTrendline || currentTopic?.defaultTrendline || 'linear';
+      return {
+        groupName: g.groupName,
+        color: GROUP_COLORS[g.groupName] || COLOR_PALETTE[idx % COLOR_PALETTE.length],
+        hasData: valid.length > 0,
+        validCount: valid.length,
+        outlierCount: outliers.length,
+        points: valid,
+        outlierPoints: outliers.map((p) => ({ x: Number(p.x), y: Number(p.y), group: g.groupName })),
+        trend: computeTrendline(trendType, rawPoints)
+      };
+    });
+  }, [fullGroupsData, currentTopic]);
+
+  // Multi-series overlay dataset: sampled trendline curve per group plus the
+  // group's own measured points, matching the student "전체 모둠 데이터 확인" chart.
+  const { overlayData, overlayXDomain, overlayYDomain } = useMemo(() => {
+    const active = groupMetrics.filter((gm) => gm.hasData);
+    const allPoints = active.flatMap((gm) => gm.points);
+    const allOutliers = active.flatMap((gm) => gm.outlierPoints);
+    if (allPoints.length === 0) {
+      return { overlayData: [], overlayXDomain: [0, 10], overlayYDomain: [0, 10] };
+    }
+
+    const xVals = [...allPoints, ...allOutliers].map((p) => p.x);
+    const yVals = [...allPoints, ...allOutliers].map((p) => p.y);
+    const minX = Math.min(...xVals);
+    const maxX = Math.max(...xVals);
+    const minY = Math.min(...yVals);
+    const maxY = Math.max(...yVals);
+    const marginX = (maxX - minX) * 0.1 || 1;
+    const marginY = (maxY - minY) * 0.1 || 1;
+
+    const rows: Array<{ x: number; [key: string]: any }> = [];
+
+    const steps = 40;
+    const startX = Math.max(0, minX - marginX);
+    const stepSize = (maxX + marginX - startX) / steps;
+    for (let i = 0; i <= steps; i++) {
+      const curX = startX + i * stepSize;
+      const row: { x: number; [key: string]: any } = { x: Number(curX.toFixed(3)) };
+      active.forEach((gm) => {
+        const pred = gm.trend.predict(curX);
+        row[`${gm.groupName}_trend`] =
+          pred !== null && !isNaN(pred) && isFinite(pred) ? Number(pred.toFixed(3)) : null;
       });
-  }, [fullGroupsData]);
+      rows.push(row);
+    }
+
+    active.forEach((gm) => {
+      gm.points.forEach((pt) => {
+        rows.push({ x: pt.x, [`${gm.groupName}_actual`]: pt.y });
+      });
+      gm.outlierPoints.forEach((pt) => {
+        rows.push({ x: pt.x, [`${gm.groupName}_outlier`]: pt.y });
+      });
+    });
+
+    rows.sort((a, b) => a.x - b.x);
+
+    return {
+      overlayData: rows,
+      overlayXDomain: [Math.max(0, Math.floor(minX - marginX)), Math.ceil(maxX + marginX)],
+      overlayYDomain: [Math.max(0, Math.floor(minY - marginY)), Math.ceil(maxY + marginY)]
+    };
+  }, [groupMetrics]);
+
+  const activeGroupMetrics = groupMetrics.filter((gm) => gm.hasData);
+  const totalOutlierCount = groupMetrics.reduce((acc, gm) => acc + gm.outlierCount, 0);
 
   return (
     <div className="space-y-6">
@@ -255,7 +331,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             >
               {topics.map((t) => (
                 <option key={t.topicId} value={t.topicId}>
-                  {t.title} ({t.xName} vs {t.yName})
+                  {t.title} ({t.xVarName} vs {t.yVarName})
                 </option>
               ))}
             </select>
@@ -377,6 +453,42 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
       </div>
 
       {/* 2. Main Content Display based on View Mode */}
+      {/* Print rules for the wide result tables: the on-screen layout relies on
+          horizontal/vertical scroll containers, which clip their content when
+          printed. Unlock them and shrink the type so a full row set fits. */}
+      <style>{`
+        @media print {
+          #all-groups-overview-printable .overflow-x-auto,
+          #all-groups-overview-printable .overflow-y-auto,
+          #all-groups-overview-printable .overflow-hidden {
+            overflow: visible !important;
+            max-height: none !important;
+          }
+          #all-groups-overview-printable table {
+            width: 100% !important;
+            table-layout: auto;
+            font-size: 9px !important;
+          }
+          #all-groups-overview-printable th,
+          #all-groups-overview-printable td {
+            padding: 3px 4px !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            word-break: break-word;
+            white-space: normal !important;
+          }
+          #all-groups-overview-printable tr,
+          #all-groups-overview-printable .print-avoid-break {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          #all-groups-overview-printable .shadow-sm,
+          #all-groups-overview-printable .shadow-xs {
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+
       <div id="all-groups-overview-printable" className="space-y-6">
         {/* Printable Header (Visible on print) */}
         <div className="hidden print:block mb-4 p-4 border-b border-slate-300">
@@ -384,7 +496,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             [{selectedGrade} {selectedClass}] {currentTopic?.title} - 전체 모둠 탐구 결과 종합표
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            독립변인(X): {currentTopic?.xName} ({currentTopic?.xUnit}) | 종속변인(Y): {currentTopic?.yName} ({currentTopic?.yUnit}) | 출력일시: {new Date().toLocaleString()}
+            독립변인(X): {currentTopic?.xVarName} ({currentTopic?.xUnit}) | 종속변인(Y): {currentTopic?.yVarName} ({currentTopic?.yUnit}) | 출력일시: {new Date().toLocaleString()}
           </p>
         </div>
 
@@ -400,10 +512,15 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                 <p className="text-xs text-slate-500 mt-0.5">
                   각 모둠의 측정값(X, Y 쌍), 선택 추세선, 결론 요약 및 채점 상태를 한 번에 검토합니다.
                 </p>
+                {totalOutlierCount > 0 && (
+                  <p className="text-[11px] font-semibold text-rose-600 mt-1">
+                    ⚠️ 학생이 이상치로 표시한 측정값 {totalOutlierCount}개는 붉은색 취소선으로 구분되며, 측정수와 추세선 계산에서 제외됩니다.
+                  </p>
+                )}
               </div>
 
               {/* Search */}
-              <div className="relative w-full sm:w-64">
+              <div className="relative w-full sm:w-64 no-print">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -419,11 +536,11 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-3.5 text-center w-16">모둠</th>
-                    <th className="py-3 px-3 text-center w-20">상태</th>
-                    <th className="py-3 px-3 text-center w-16">측정수</th>
+                    <th className="py-3 px-3.5 text-center w-24 whitespace-nowrap">모둠</th>
+                    <th className="py-3 px-3 text-center w-24 whitespace-nowrap">상태</th>
+                    <th className="py-3 px-3 text-center w-16 whitespace-nowrap">측정수</th>
                     <th className="py-3 px-4 min-w-[200px]">
-                      측정 데이터 ({currentTopic?.xName} [{currentTopic?.xUnit}] ➔ {currentTopic?.yName} [{currentTopic?.yUnit}])
+                      측정 데이터 ({currentTopic?.xVarName} [{currentTopic?.xUnit}] ➔ {currentTopic?.yVarName} [{currentTopic?.yUnit}])
                     </th>
                     <th className="py-3 px-3 text-center w-28">선택 추세선</th>
                     <th className="py-3 px-4 min-w-[180px]">핵심 결론 요약</th>
@@ -440,6 +557,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                     const pts = g?.points || [];
                     const isSub = item.isSubmitted;
                     const evalScore = item.evaluation?.score;
+                    const metrics = groupMetrics.find((m) => m.groupName === item.groupName);
 
                     return (
                       <tr
@@ -451,7 +569,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                         {/* Group Name */}
                         <td className="py-3.5 px-3.5 text-center font-bold">
                           <span
-                            className="inline-block px-2.5 py-1 rounded-lg text-xs font-black"
+                            className="inline-block px-2.5 py-1 rounded-lg text-xs font-black whitespace-nowrap"
                             style={{
                               backgroundColor: `${GROUP_COLORS[item.groupName] || '#6366f1'}18`,
                               color: GROUP_COLORS[item.groupName] || '#4f46e5'
@@ -464,21 +582,32 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                         {/* Status */}
                         <td className="py-3.5 px-3 text-center">
                           {isSub ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 whitespace-nowrap">
                               <CheckCircle2 className="w-3 h-3" />
                               <span>제출됨</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500 whitespace-nowrap">
                               <Clock className="w-3 h-3" />
                               <span>미제출</span>
                             </span>
                           )}
                         </td>
 
-                        {/* Point Count */}
+                        {/* Point Count (outliers are excluded from the usable count) */}
                         <td className="py-3.5 px-3 text-center font-bold">
-                          {isSub ? `${pts.length}개` : '-'}
+                          {isSub ? (
+                            <div className="leading-tight">
+                              <div>{metrics?.validCount ?? pts.length}개</div>
+                              {(metrics?.outlierCount || 0) > 0 && (
+                                <div className="text-[10px] font-bold text-rose-600 whitespace-nowrap">
+                                  이상치 {metrics?.outlierCount}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            '-'
+                          )}
                         </td>
 
                         {/* Data Points Sequence */}
@@ -488,10 +617,19 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                               {pts.map((p, pIdx) => (
                                 <span
                                   key={p.id || pIdx}
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 shrink-0 font-mono"
-                                  title={`점 ${pIdx + 1}: ${currentTopic?.xName}=${p.x}, ${currentTopic?.yName}=${p.y}`}
+                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-medium border shrink-0 font-mono ${
+                                    p.isOutlier
+                                      ? 'bg-rose-50 text-rose-700 border-rose-300 line-through decoration-rose-400'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                  title={
+                                    p.isOutlier
+                                      ? `점 ${pIdx + 1} (이상치 처리됨 - 추세선 계산 제외): ${currentTopic?.xVarName}=${p.x}, ${currentTopic?.yVarName}=${p.y}`
+                                      : `점 ${pIdx + 1}: ${currentTopic?.xVarName}=${p.x}, ${currentTopic?.yVarName}=${p.y}`
+                                  }
                                 >
-                                  ({p.x}, <span className="font-bold text-indigo-700">{p.y}</span>)
+                                  {p.isOutlier && <span className="not-italic no-underline">⚠️</span>}
+                                  ({p.x}, <span className={`font-bold ${p.isOutlier ? 'text-rose-700' : 'text-indigo-700'}`}>{p.y}</span>)
                                 </span>
                               ))}
                             </div>
@@ -504,11 +642,13 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                         <td className="py-3.5 px-3 text-center">
                           {isSub && g?.selectedTrendline ? (
                             <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                              {g.selectedTrendline === 'linear' && '비례 (직선)'}
-                              {g.selectedTrendline === 'linear_offset' && '직선 (절편)'}
+                              {/* Labels must cover every TrendlineType - 'proportional'
+                                  and 'power' were missing and rendered an empty cell. */}
+                              {g.selectedTrendline === 'linear' && '직선 (절편)'}
+                              {g.selectedTrendline === 'proportional' && '비례 (원점)'}
                               {g.selectedTrendline === 'inverse' && '반비례 (곡선)'}
                               {g.selectedTrendline === 'quadratic' && '이차곡선'}
-                              {g.selectedTrendline === 'none' && '추세선 없음'}
+                              {g.selectedTrendline === 'power' && '멱함수'}
                             </span>
                           ) : (
                             <span className="text-slate-400">-</span>
@@ -580,11 +720,16 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>측정값 비교 매트릭스 ({currentTopic?.xName}에 따른 모둠별 {currentTopic?.yName} 비교)</span>
+                <span>측정값 비교 매트릭스 ({currentTopic?.xVarName}에 따른 모둠별 {currentTopic?.yVarName} 비교)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 모든 모둠의 측정 데이터를 포인트 순서(1번, 2번...) 및 X값에 따라 가로-세로 매트릭스로 정렬하여 오차와 경향성을 한눈에 비교합니다.
               </p>
+              {totalOutlierCount > 0 && (
+                <p className="text-[11px] font-semibold text-rose-600 mt-1">
+                  ⚠️ 학생이 이상치로 표시한 측정값 {totalOutlierCount}개는 붉은색 취소선으로 구분되며, 추세선 계산에서 제외됩니다.
+                </p>
+              )}
             </div>
 
             {/* Matrix Table */}
@@ -638,15 +783,35 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                         </td>
                         {[0, 1, 2, 3, 4, 5, 6, 7].map((ptIndex) => {
                           const p = pts[ptIndex];
+                          const isLastColumn = ptIndex === 7;
+                          const hiddenCount = pts.length - 8;
                           return (
                             <td
                               key={ptIndex}
                               className="p-2.5 border border-slate-200 text-center font-mono text-[11px]"
                             >
                               {p ? (
-                                <div className="bg-slate-50 p-1 rounded-md border border-slate-200">
-                                  <span className="text-slate-500">{p.x}, </span>
-                                  <span className="font-bold text-indigo-700">{p.y}</span>
+                                <div
+                                  className={`relative p-1 rounded-md border ${
+                                    p.isOutlier
+                                      ? 'bg-rose-50 border-rose-300 line-through decoration-rose-400'
+                                      : 'bg-slate-50 border-slate-200'
+                                  }`}
+                                  title={p.isOutlier ? '이상치로 표시된 측정값 (추세선 계산 제외)' : undefined}
+                                >
+                                  {p.isOutlier && (
+                                    <span className="absolute -top-1.5 -left-1.5 text-[9px] no-underline">⚠️</span>
+                                  )}
+                                  <span className={p.isOutlier ? 'text-rose-500' : 'text-slate-500'}>{p.x}, </span>
+                                  <span className={`font-bold ${p.isOutlier ? 'text-rose-700' : 'text-indigo-700'}`}>{p.y}</span>
+                                  {isLastColumn && hiddenCount > 0 && (
+                                    <span
+                                      className="absolute -top-1.5 -right-1.5 px-1 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                                      title={`${hiddenCount}개의 추가 측정값이 이 표에 표시되지 않았습니다. 측정 수 열을 확인하세요.`}
+                                    >
+                                      +{hiddenCount}
+                                    </span>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-slate-300">-</span>
@@ -666,84 +831,156 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
           </div>
         )}
 
-        {/* VIEW 3: CLASS MULTI-SCATTER CHART (반 전체 산점도 & 추세 비교 차트) */}
+        {/* VIEW 3: CLASS MULTI-SERIES OVERLAY CHART (반 전체 그래프 중첩 비교) */}
         {viewMode === 'chart' && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-indigo-600" />
-                  <span>반 전체 모둠 산점도 중첩 시각화 ({selectedGrade} {selectedClass})</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  각 모둠의 측정 데이터 포인트를 모둠별 고유 색상으로 하나의 차트에 시각화하여 반 전체 경향성과 오차 분포를 파악합니다.
-                </p>
-              </div>
-
-              {/* Group Legend Badges */}
-              <div className="flex flex-wrap items-center gap-2">
-                {chartDataSeries.map((s) => (
-                  <span
-                    key={s.groupName}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-slate-50 border border-slate-200"
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span>{s.groupName} ({s.points.length}점)</span>
-                  </span>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
+                <BarChart3 className="w-4 h-4 text-indigo-600" />
+                <span>전체 모둠 측정점 및 추세선 겹쳐보기 ({selectedGrade} {selectedClass})</span>
+              </h3>
+              <span className="text-xs text-slate-400 whitespace-nowrap">
+                각 모둠별 고유 색상 점과 실선 추세선
+              </span>
             </div>
 
-            {chartDataSeries.length > 0 ? (
-              <div className="w-full h-80 sm:h-96 pt-4">
+            {/* Custom legend - one badge per group, so it never wraps raggedly */}
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+              {activeGroupMetrics.map((gm) => (
+                <span
+                  key={gm.groupName}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700 whitespace-nowrap"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: gm.color }} />
+                  <span>
+                    {gm.groupName} ({gm.validCount}점
+                    {gm.outlierCount > 0 && (
+                      <span className="text-rose-600"> · 이상치 {gm.outlierCount}</span>
+                    )}
+                    )
+                  </span>
+                </span>
+              ))}
+              {totalOutlierCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-600 whitespace-nowrap">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0 border-2 border-rose-500 bg-white" />
+                  <span>이상치 (추세선 제외)</span>
+                </span>
+              )}
+            </div>
+
+            {activeGroupMetrics.length > 0 ? (
+              <div className="w-full h-80 sm:h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+                  <ComposedChart data={overlayData} margin={{ top: 10, right: 30, bottom: 25, left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       type="number"
                       dataKey="x"
-                      name={currentTopic?.xName || 'X'}
-                      unit={currentTopic?.xUnit ? ` ${currentTopic.xUnit}` : ''}
+                      domain={overlayXDomain}
                       stroke="#64748b"
-                      fontSize={11}
+                      tick={{ fontSize: 11 }}
+                      label={{
+                        value: `${currentTopic?.xVarName || 'X'} (${currentTopic?.xUnit || ''})`,
+                        position: 'insideBottom',
+                        offset: -15,
+                        fontSize: 12,
+                        fill: '#334155',
+                        fontWeight: 600
+                      }}
                     />
                     <YAxis
                       type="number"
-                      dataKey="y"
-                      name={currentTopic?.yName || 'Y'}
-                      unit={currentTopic?.yUnit ? ` ${currentTopic.yUnit}` : ''}
+                      domain={overlayYDomain}
                       stroke="#64748b"
-                      fontSize={11}
+                      tick={{ fontSize: 11 }}
+                      label={{
+                        value: `${currentTopic?.yVarName || 'Y'} (${currentTopic?.yUnit || ''})`,
+                        angle: -90,
+                        position: 'insideLeft',
+                        offset: 0,
+                        fontSize: 12,
+                        fill: '#334155',
+                        fontWeight: 600
+                      }}
                     />
                     <Tooltip
-                      cursor={{ strokeDasharray: '3 3' }}
-                      content={({ payload }) => {
-                        if (!payload || payload.length === 0) return null;
-                        const data = payload[0].payload;
+                      isAnimationActive={false}
+                      content={({ active, payload }) => {
+                        if (!active || !payload || payload.length === 0) return null;
+                        const item = payload[0].payload;
+
+                        // Only measured points get a tooltip; the sampled trendline
+                        // rows carry no student-entered value worth showing.
+                        const measured = activeGroupMetrics
+                          .map((gm) => ({
+                            gm,
+                            actual: item[`${gm.groupName}_actual`],
+                            outlier: item[`${gm.groupName}_outlier`]
+                          }))
+                          .filter(
+                            (e) =>
+                              (e.actual !== undefined && e.actual !== null) ||
+                              (e.outlier !== undefined && e.outlier !== null)
+                          );
+                        if (measured.length === 0) return null;
+
                         return (
-                          <div className="bg-slate-900 text-white p-2.5 rounded-xl text-xs shadow-lg space-y-1">
-                            <div className="font-bold text-indigo-300">{data.group}</div>
-                            <div>
-                              {currentTopic?.xName || 'X'}: <span className="font-mono">{data.x}</span> {currentTopic?.xUnit}
+                          <div className="bg-slate-900 text-white p-3 rounded-lg shadow-lg text-xs space-y-1.5 max-w-xs">
+                            <div className="font-bold text-amber-300 border-b border-slate-700 pb-1">
+                              {currentTopic?.xVarName || 'X'} = {item.x} {currentTopic?.xUnit}
                             </div>
-                            <div>
-                              {currentTopic?.yName || 'Y'}: <span className="font-mono text-emerald-300">{data.y}</span> {currentTopic?.yUnit}
-                            </div>
+                            {measured.map(({ gm, actual, outlier }) => {
+                              const isOut = outlier !== undefined && outlier !== null;
+                              return (
+                                <div key={gm.groupName} className="flex items-center justify-between gap-3">
+                                  <span className="font-semibold" style={{ color: gm.color }}>
+                                    {gm.groupName}:
+                                  </span>
+                                  <span className={isOut ? 'text-rose-300' : 'text-slate-200'}>
+                                    {isOut ? `${outlier} (이상치)` : actual} {currentTopic?.yUnit}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       }}
                     />
-                    <Legend />
-                    {chartDataSeries.map((series) => (
-                      <Scatter
-                        key={series.groupName}
-                        name={series.groupName}
-                        data={series.points}
-                        fill={series.color}
-                        shape="circle"
-                      />
+                    <ReferenceLine x={0} stroke="#cbd5e1" />
+                    <ReferenceLine y={0} stroke="#cbd5e1" />
+
+                    {activeGroupMetrics.map((gm) => (
+                      <React.Fragment key={gm.groupName}>
+                        <Line
+                          type="monotone"
+                          dataKey={`${gm.groupName}_trend`}
+                          name={`${gm.groupName} 추세`}
+                          stroke={gm.color}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                        <Scatter
+                          dataKey={`${gm.groupName}_actual`}
+                          name={`${gm.groupName} 실측치`}
+                          fill={gm.color}
+                          stroke="#ffffff"
+                          strokeWidth={1}
+                          isAnimationActive={false}
+                        />
+                        <Scatter
+                          dataKey={`${gm.groupName}_outlier`}
+                          name={`${gm.groupName} 이상치`}
+                          fill="#ffffff"
+                          stroke="#f43f5e"
+                          strokeWidth={2}
+                          shape="circle"
+                          isAnimationActive={false}
+                        />
+                      </React.Fragment>
                     ))}
-                  </ScatterChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             ) : (
@@ -770,16 +1007,23 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             </div>
 
             {/* Questions Comparison Cards */}
+            {reportQuestions.length === 0 && (
+              <div className="p-12 text-center text-slate-400 space-y-2">
+                <HelpCircle className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-sm font-semibold">이 탐구 주제에 설정된 보고서 질문이 없습니다.</p>
+                <p className="text-xs text-slate-400">탐구주제 관리 탭에서 보고서 질문을 먼저 구성해주세요.</p>
+              </div>
+            )}
             <div className="space-y-6">
-              {(currentTopic?.questions || []).map((q, qIdx) => (
+              {reportQuestions.map((q, qIdx) => (
                 <div key={q.id || qIdx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                   <div className="flex items-start gap-2">
-                    <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-bold text-xs shrink-0">
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-bold text-xs shrink-0 whitespace-nowrap">
                       질문 {qIdx + 1}
                     </span>
                     <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-800">{q.prompt}</h4>
-                      {q.guide && <p className="text-[11px] text-slate-500 mt-0.5">가이드: {q.guide}</p>}
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-800">{q.title}</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{q.question}</p>
                     </div>
                   </div>
 

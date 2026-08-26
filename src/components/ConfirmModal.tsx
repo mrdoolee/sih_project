@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AlertTriangle,
   UploadCloud,
@@ -41,7 +41,27 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   icon = 'alert',
   isLoading = false
 }) => {
+  // Guard against a double-click firing onConfirm twice before the caller's
+  // isLoading (often not even wired up) or the modal's own unmount lands -
+  // most callers close the modal and fire an unawaited async action, and
+  // React state updates aren't synchronous, so a fast second click can slip
+  // through. Tracked independently of isLoading/isOpen props since callers
+  // can't be relied on to manage those correctly.
+  const hasConfirmedRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      hasConfirmedRef.current = false;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const handleConfirmClick = () => {
+    if (hasConfirmedRef.current) return;
+    hasConfirmedRef.current = true;
+    onConfirm();
+  };
 
   const renderIcon = () => {
     switch (icon) {
@@ -151,9 +171,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onConfirm();
-            }}
+            onClick={handleConfirmClick}
             disabled={isLoading}
             className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 ${getConfirmButtonClasses()}`}
           >

@@ -33,13 +33,22 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({
   const reportQuestions = getEffectiveReportQuestions(topic);
   const notes = groupData.conclusionNotes || { summary: '', principle: '', errorAnalysis: '', answers: {} };
 
+  // Legacy summary/principle/errorAnalysis fields only ever represented a
+  // fixed 3-question shape; for topics with a different question count
+  // (e.g. EXP_02's 4 questions) positional fallback mislabels answers, so
+  // only use it when the topic actually has exactly 3 questions. See the
+  // matching guard in ReportBuilder.tsx.
+  const useLegacyPositionalSync = reportQuestions.length === 3;
+
   const getAnswer = (qId: string, idx: number): string => {
     if (notes.answers && notes.answers[qId] !== undefined) {
       return notes.answers[qId];
     }
-    if (idx === 0 && notes.summary) return notes.summary;
-    if (idx === 1 && notes.principle) return notes.principle;
-    if (idx === 2 && notes.errorAnalysis) return notes.errorAnalysis;
+    if (useLegacyPositionalSync) {
+      if (idx === 0 && notes.summary) return notes.summary;
+      if (idx === 1 && notes.principle) return notes.principle;
+      if (idx === 2 && notes.errorAnalysis) return notes.errorAnalysis;
+    }
     return '';
   };
 

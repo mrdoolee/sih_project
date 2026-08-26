@@ -14,9 +14,6 @@ import {
 import {
   TrendingUp,
   Activity,
-  Lightbulb,
-  AlertTriangle,
-  Award,
   PenTool,
   Cpu,
   Sparkles,
@@ -27,10 +24,9 @@ import {
   TopicConfig,
   TrendlineType,
   TrendlineResult,
-  ScientificInsight,
   StudentManualGraphData
 } from '../types';
-import { filterValidPoints, computeTrendline, generateScientificInsight } from '../utils/mathAnalysis';
+import { filterValidPoints, computeTrendline } from '../utils/mathAnalysis';
 import { ManualGraphCanvas } from './ManualGraphCanvas';
 
 interface ChartPanelProps {
@@ -66,11 +62,6 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
   const trendResult: TrendlineResult = useMemo(() => {
     return computeTrendline(selectedTrendline, points);
   }, [selectedTrendline, points]);
-
-  // Generate scientific insight
-  const insight: ScientificInsight = useMemo(() => {
-    return generateScientificInsight(topic, points, trendResult);
-  }, [topic, points, trendResult]);
 
   // Build chart dataset with fine-grained interpolation curve for trendline
   const chartData = useMemo(() => {
@@ -379,38 +370,6 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
             )}
           </div>
 
-          {/* Scientific Insights & Interpretation Panel */}
-          <div className="bg-slate-50 border-t border-slate-200 p-3.5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-              <Lightbulb className="w-4 h-4 text-amber-500" />
-              <span>과학적 관계 해석 및 시스템 도우미 (AI Scientific Insight)</span>
-            </div>
-
-            {/* Dynamic Insight Card */}
-            <div className="bg-white rounded-lg p-3 border border-slate-200/80 shadow-2xs space-y-2 text-xs">
-              <div className="flex items-start gap-2">
-                <Award className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-slate-800">{insight.relationshipTitle}</p>
-                  <p className="text-slate-600 mt-0.5 leading-relaxed">{insight.description}</p>
-                </div>
-              </div>
-
-              {insight.slopeInterpretation && (
-                <div className="flex items-start gap-2 pt-1 border-t border-slate-100">
-                  <span className="font-semibold text-blue-700 shrink-0">🔬 물리적 의미:</span>
-                  <p className="text-slate-600 leading-relaxed">{insight.slopeInterpretation}</p>
-                </div>
-              )}
-
-              {insight.outlierWarning && (
-                <div className="flex items-start gap-2 pt-1.5 border-t border-amber-100 bg-amber-50/50 p-2 rounded text-amber-900">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <p className="leading-relaxed">{insight.outlierWarning}</p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       )}
     </div>

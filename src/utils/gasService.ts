@@ -291,7 +291,8 @@ export function saveStoredEvaluation(evaluation: GroupEvaluation): void {
 
 export async function saveEvaluationToGAS(
   evaluation: GroupEvaluation,
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   saveStoredEvaluation(evaluation);
 
@@ -302,14 +303,19 @@ export async function saveEvaluationToGAS(
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'saveEvaluation',
+          authPassword: authPassword || '',
           payload: evaluation
         })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '저장 중 오류가 발생했습니다.' };
+      }
       return { success: true, message: '평가 및 피드백이 구글 스프레드시트 [평가_피드백] 탭에 성공적으로 저장되었습니다.' };
     } catch (e) {
       console.warn('Failed to sync evaluation to GAS:', e);
-      return { success: true, message: '로컬 브라우저에 저장되었습니다 (구글 시트 전송 대기).' };
+      return { success: false, message: '스프레드시트 동기화에 실패했습니다. 로컬에는 저장되었지만 온라인 저장은 실패했습니다 (네트워크 확인 후 다시 시도하세요).' };
     }
   }
   return { success: true, message: '평가 및 피드백이 브라우저에 저장되었습니다.' };
@@ -356,7 +362,8 @@ export async function setGroupPassword(
   classNum: string,
   groupName: string,
   password: string,
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   const store = getStoredGroupPasswords();
   const key = getGroupPasswordKey(topicId, grade, classNum, groupName);
@@ -365,16 +372,22 @@ export async function setGroupPassword(
 
   if (webAppUrl && webAppUrl.startsWith('http')) {
     try {
-      await fetch(webAppUrl, {
+      const response = await fetch(webAppUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'saveGroupPassword',
+          authPassword: authPassword || '',
           payload: { topicId, grade, classNum, groupName, password: password.trim() }
         })
       });
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '스프레드시트 저장에 실패했습니다.' };
+      }
     } catch (e) {
       console.warn('Failed to sync group password to GAS:', e);
+      return { success: false, message: '로컬에는 저장되었지만 스프레드시트 동기화에 실패했습니다.' };
     }
   }
   return { success: true, message: '모둠 비밀번호가 설정되었습니다.' };
@@ -385,7 +398,8 @@ export async function resetGroupPassword(
   grade: string,
   classNum: string,
   groupName: string,
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   const store = getStoredGroupPasswords();
   const key = getGroupPasswordKey(topicId, grade, classNum, groupName);
@@ -394,16 +408,22 @@ export async function resetGroupPassword(
 
   if (webAppUrl && webAppUrl.startsWith('http')) {
     try {
-      await fetch(webAppUrl, {
+      const response = await fetch(webAppUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'resetGroupPassword',
+          authPassword: authPassword || '',
           payload: { topicId, grade, classNum, groupName }
         })
       });
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '스프레드시트 초기화에 실패했습니다.' };
+      }
     } catch (e) {
       console.warn('Failed to reset group password in GAS:', e);
+      return { success: false, message: '로컬에는 초기화되었지만 스프레드시트 동기화에 실패했습니다.' };
     }
   }
   return { success: true, message: '모둠 비밀번호가 초기화되었습니다.' };
@@ -411,7 +431,8 @@ export async function resetGroupPassword(
 
 export async function saveAllGroupPasswordsToGAS(
   passwords: GroupPasswordStore,
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   saveStoredGroupPasswords(passwords);
 
@@ -422,14 +443,19 @@ export async function saveAllGroupPasswordsToGAS(
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'saveAllGroupPasswords',
+          authPassword: authPassword || '',
           payload: { passwords }
         })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '스프레드시트 동기화에 실패했습니다.' };
+      }
       return { success: true, message: '모둠 비밀번호가 스프레드시트 [환경설정_모둠비밀번호] 시트에 성공적으로 동기화되었습니다.' };
     } catch (e) {
       console.warn('Failed to sync all group passwords to GAS:', e);
-      return { success: true, message: '로컬 브라우저에 저장되었습니다 (구글 시트 전송 대기).' };
+      return { success: false, message: '로컬에는 저장되었지만 스프레드시트 동기화에 실패했습니다 (네트워크 확인 후 다시 시도하세요).' };
     }
   }
   return { success: true, message: '모둠 비밀번호가 브라우저에 저장되었습니다.' };
@@ -477,11 +503,12 @@ export function generateBulkGroupPasswords(
   return store;
 }
 
-export async function fetchGroupPasswordsFromGAS(webAppUrl: string): Promise<GroupPasswordStore | null> {
+export async function fetchGroupPasswordsFromGAS(webAppUrl: string, authPassword?: string): Promise<GroupPasswordStore | null> {
   if (!webAppUrl || !webAppUrl.startsWith('http')) return null;
   try {
     const url = new URL(webAppUrl);
     url.searchParams.set('action', 'getGroupPasswords');
+    if (authPassword) url.searchParams.set('authPassword', authPassword);
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json' }
@@ -535,10 +562,37 @@ export async function fetchTeacherSettingsFromGAS(webAppUrl: string): Promise<Te
   }
 }
 
+// Verify a candidate teacher password against the value actually stored in the
+// spreadsheet, without ever transmitting the real password back to the client.
+// Used to repair a stale/default locally-cached password on a new device/browser.
+export async function verifyTeacherPasswordOnGAS(
+  password: string,
+  webAppUrl?: string
+): Promise<boolean | null> {
+  if (!webAppUrl || !webAppUrl.startsWith('http')) return null;
+  try {
+    const response = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'verifyTeacherPassword',
+        authPassword: password
+      })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && data.status === 'success' ? Boolean(data.valid) : null;
+  } catch (err) {
+    console.warn('Failed to verify teacher password against GAS:', err);
+    return null;
+  }
+}
+
 // Save teacher settings (password, toggles) to Google Spreadsheet [환경설정]
 export async function saveTeacherSettingsToGAS(
   settings: TeacherSettingsConfig,
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   saveStoredTeacherSettings(settings);
 
@@ -549,15 +603,20 @@ export async function saveTeacherSettingsToGAS(
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'saveSettings',
+          authPassword: authPassword || '',
           payload: settings
         })
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '스프레드시트 저장에 실패했습니다.' };
+      }
       return { success: true, message: '구글 스프레드시트 [환경설정] 탭에 성공적으로 저장되었습니다.' };
     } catch (err: any) {
       console.warn('Failed to save settings to GAS:', err);
-      return { success: true, message: '로컬 브라우저에 저장되었습니다 (구글 시트 전송 대기).' };
+      return { success: false, message: '로컬에는 저장되었지만 스프레드시트 동기화에 실패했습니다 (네트워크 확인 후 다시 시도하세요).' };
     }
   }
 
@@ -567,7 +626,8 @@ export async function saveTeacherSettingsToGAS(
 // Save topics to Google Spreadsheet [환경설정_주제목록]
 export async function saveTopicsToGAS(
   topics: TopicConfig[],
-  webAppUrl?: string
+  webAppUrl?: string,
+  authPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   saveStoredTopics(topics);
 
@@ -583,15 +643,20 @@ export async function saveTopicsToGAS(
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'saveTopics',
+          authPassword: authPassword || '',
           payload: { topics: payloadTopics }
         })
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      if (data && data.status === 'error') {
+        return { success: false, message: data.message || '스프레드시트 저장에 실패했습니다.' };
+      }
       return { success: true, message: '구글 스프레드시트 [환경설정_주제목록] 탭에 성공적으로 저장되었습니다.' };
     } catch (err: any) {
       console.warn('Failed to save topics to GAS:', err);
-      return { success: true, message: '로컬 브라우저에 저장되었습니다 (구글 시트 전송 대기).' };
+      return { success: false, message: '로컬에는 저장되었지만 스프레드시트 동기화에 실패했습니다 (네트워크 확인 후 다시 시도하세요).' };
     }
   }
 
@@ -681,12 +746,16 @@ export async function saveGroupData(
       if (!response.ok) {
         throw new Error(`GAS Server Error (${response.status})`);
       }
+      const resultData = await response.json().catch(() => null);
+      if (resultData && resultData.status === 'error') {
+        return { success: false, message: resultData.message || '스프레드시트 저장에 실패했습니다.' };
+      }
       return { success: true, message: '구글 스프레드시트 및 로컬 저장소에 성공적으로 동기화되었습니다.' };
     } catch (err: any) {
       console.warn('GAS Save failed, saved locally:', err);
       return {
-        success: true,
-        message: '로컬 브라우저에 안전하게 저장되었습니다 (구글 시트 전송 대기).'
+        success: false,
+        message: '로컬에는 저장되었지만 구글 시트 동기화에 실패했습니다 (네트워크 확인 후 다시 저장해주세요).'
       };
     }
   }
@@ -752,58 +821,104 @@ const SHEET_PASSWORDS_NAME = '환경설정_모둠비밀번호';
 const SHEET_DATA_NAME = '통합_실험데이터';
 const SHEET_EVALUATIONS_NAME = '평가_피드백';
 
+// 관리자(교사) 액션 목록 - 이 액션들은 authPassword가 시트에 저장된 현재 교사
+// 비밀번호와 일치해야만 실행된다. 클라이언트의 비밀번호 모달은 UI 편의용일 뿐,
+// 실제 접근 통제는 여기서 이루어진다.
+const PROTECTED_ACTIONS = [
+  'saveSettings',
+  'saveAllGroupPasswords',
+  'saveGroupPassword',
+  'resetGroupPassword',
+  'saveTopics',
+  'saveEvaluation'
+];
+
+function getConfiguredTeacherPassword(ss) {
+  ensureConfigSheet(ss);
+  const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    const key = String(values[i][0]).trim();
+    if (key === '교사_비밀번호' || key === 'teacherPassword') {
+      let pwStr = String(values[i][1] !== undefined && values[i][1] !== null ? values[i][1] : '0000').trim();
+      if (pwStr === '0') pwStr = '0000';
+      return pwStr;
+    }
+  }
+  return '0000';
+}
+
+function getPublicSettings(ss) {
+  ensureConfigSheet(ss);
+  const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
+  const values = sheet.getDataRange().getValues();
+  const settings = {
+    allowClassOverview: true,
+    allowAutoAnalysis: true,
+    requireGroupPassword: true
+  };
+  for (let i = 1; i < values.length; i++) {
+    const key = String(values[i][0]).trim();
+    const val = values[i][1];
+    if (key === '전체_모둠_데이터_확인_허용' || key === 'allowClassOverview') {
+      settings.allowClassOverview = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
+    } else if (key === '컴퓨터_자동_분석_그래프_허용' || key === 'allowAutoAnalysis') {
+      settings.allowAutoAnalysis = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
+    } else if (key === '모둠_비밀번호_인증_사용' || key === 'requireGroupPassword') {
+      settings.requireGroupPassword = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
+    }
+  }
+  return settings;
+}
+
+// postData.authPassword가 현재 시트에 저장된 교사 비밀번호와 일치하는지 확인.
+function isAuthorizedTeacherRequest(ss, postData) {
+  const correct = getConfiguredTeacherPassword(ss);
+  const provided = String((postData && postData.authPassword) || '').trim();
+  return provided !== '' && provided === correct;
+}
+
+// 스프레드시트 수식 인젝션 방지: 셀 값이 =,+,-,@ 로 시작하면 앞에 작은따옴표를
+// 붙여 리터럴 텍스트로 저장되도록 강제한다 (자유 입력 텍스트 전용, 숫자/날짜 컬럼에는 사용 금지).
+function sanitizeCell(val) {
+  const s = (val === undefined || val === null) ? '' : String(val);
+  if (/^[=+\\-@\\t\\r]/.test(s)) {
+    return "'" + s;
+  }
+  return s;
+}
+
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'getTopics';
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // 1. 교사 환경설정 조회 (비밀번호, 권한 토글)
+  // 1. 교사 환경설정 조회 (권한 토글). 비밀번호 원문은 인증되지 않은 요청에는
+  //    절대 반환하지 않는다 - 클라이언트는 로그인 시 직접 입력한 값을 로컬에만 보관한다.
   if (action === 'getSettings') {
-    ensureConfigSheet(ss);
-    const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
-    const values = sheet.getDataRange().getValues();
-    const settings = {
-      teacherPassword: '0000',
-      allowClassOverview: true,
-      allowAutoAnalysis: true,
-      requireGroupPassword: true
-    };
-    
-    for (let i = 1; i < values.length; i++) {
-      const key = String(values[i][0]).trim();
-      const val = values[i][1];
-      if (key === '교사_비밀번호' || key === 'teacherPassword') {
-        let pwStr = String(val !== undefined && val !== null ? val : '0000').trim();
-        if (pwStr === '0') pwStr = '0000';
-        settings.teacherPassword = pwStr;
-      } else if (key === '전체_모둠_데이터_확인_허용' || key === 'allowClassOverview') {
-        settings.allowClassOverview = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
-      } else if (key === '컴퓨터_자동_분석_그래프_허용' || key === 'allowAutoAnalysis') {
-        settings.allowAutoAnalysis = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
-      } else if (key === '모둠_비밀번호_인증_사용' || key === 'requireGroupPassword') {
-        settings.requireGroupPassword = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
-      }
-    }
-    
+    const settings = getPublicSettings(ss);
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       settings: settings
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 2. 모둠별 비밀번호 목록 조회
+  // 2. 모둠별 비밀번호 목록 조회 - 교사 인증된 요청에만 전체 목록 반환.
+  //    미인증 요청은 어떤 모둠에 비밀번호가 설정되어 있는지 여부(존재유무)만 받는다.
   if (action === 'getGroupPasswords') {
     ensurePasswordsSheet(ss);
     const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
     const data = sheet.getDataRange().getValues();
+    const provided = String((e && e.parameter && e.parameter.authPassword) || '').trim();
+    const isTeacher = provided !== '' && provided === getConfiguredTeacherPassword(ss);
     const passwords = {};
-    
+
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       if (!row[0] || !row[3]) continue;
       const key = String(row[0]) + '__' + String(row[1]) + '__' + String(row[2]) + '__' + String(row[3]);
-      passwords[key] = String(row[4] || '');
+      passwords[key] = isTeacher ? String(row[4] || '') : (row[4] ? '(설정됨)' : '');
     }
-    
+
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       passwords: passwords
@@ -901,14 +1016,20 @@ function doGet(e) {
         }
         
         if (row[6] !== '' && row[7] !== '') {
-          groupMap[groupName].points.push({
-            id: String(row[5] || i),
-            order: Number(row[5] || groupMap[groupName].points.length + 1),
-            x: Number(row[6]),
-            y: Number(row[7]),
-            isOutlier: String(row[8]) === 'Y',
-            note: String(row[9] || '')
-          });
+          const xNum = Number(row[6]);
+          const yNum = Number(row[7]);
+          // 시트가 수동으로 편집되어 숫자가 아닌 값이 들어간 경우, NaN을 그대로
+          // 내보내 차트/회귀분석을 오염시키는 대신 해당 측정값만 건너뛴다.
+          if (!isNaN(xNum) && !isNaN(yNum)) {
+            groupMap[groupName].points.push({
+              id: String(row[5] || i),
+              order: Number(row[5] || groupMap[groupName].points.length + 1),
+              x: xNum,
+              y: yNum,
+              isOutlier: String(row[8]) === 'Y',
+              note: String(row[9] || '')
+            });
+          }
         }
       }
     }
@@ -966,41 +1087,66 @@ function doPost(e) {
     const action = postData.action;
     const payload = postData.payload;
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
+
+    // 0. 교사 비밀번호 검증 (비밀번호 원문은 절대 반환하지 않음)
+    if (action === 'verifyTeacherPassword') {
+      const provided = String(postData.authPassword || '').trim();
+      const correct = getConfiguredTeacherPassword(ss);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        valid: provided !== '' && provided === correct
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 관리자 전용 액션은 시트에 저장된 현재 교사 비밀번호와 authPassword가
+    // 일치해야만 실행된다. saveGroupData(학생 데이터 저장)는 여기 포함되지 않는다.
+    if (PROTECTED_ACTIONS.indexOf(action) !== -1 && !isAuthorizedTeacherRequest(ss, postData)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: '인증 실패: 교사 비밀번호가 올바르지 않습니다.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // 1. 교사 환경설정 저장 (비밀번호, 권한 토글)
     if (action === 'saveSettings') {
       ensureConfigSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
-      sheet.getRange("B:B").setNumberFormat('@');
-      const values = sheet.getDataRange().getValues();
-      
-      const updateOrAppend = (keyName, val, desc) => {
-        let found = false;
-        for (let i = 1; i < values.length; i++) {
-          if (values[i][0] === keyName) {
-            sheet.getRange(i + 1, 2).setNumberFormat('@').setValue(String(val));
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          const nextRow = sheet.getLastRow() + 1;
-          sheet.appendRow([keyName, String(val), desc]);
-          sheet.getRange(nextRow, 2).setNumberFormat('@').setValue(String(val));
-        }
-      };
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_CONFIG_NAME);
+        sheet.getRange("B:B").setNumberFormat('@');
+        const values = sheet.getDataRange().getValues();
 
-      if (payload.teacherPassword !== undefined) {
-        updateOrAppend('교사_비밀번호', String(payload.teacherPassword), '교사용 관리 콘솔 접속 비밀번호');
-      }
-      if (payload.allowClassOverview !== undefined) {
-        updateOrAppend('전체_모둠_데이터_확인_허용', payload.allowClassOverview ? 'TRUE' : 'FALSE', '학생 화면에서 학급 전체 모둠 데이터 확인 버튼 노출 여부');
-      }
-      if (payload.allowAutoAnalysis !== undefined) {
-        updateOrAppend('컴퓨터_자동_분석_그래프_허용', payload.allowAutoAnalysis ? 'TRUE' : 'FALSE', '학생 화면에서 컴퓨터 자동 분석 탭 및 최적선 비교 노출 여부');
-      }
-      if (payload.requireGroupPassword !== undefined) {
-        updateOrAppend('모둠_비밀번호_인증_사용', payload.requireGroupPassword ? 'TRUE' : 'FALSE', '학생 입장 시 교사가 배부한 모둠 비밀번호 필수 입력 여부');
+        const updateOrAppend = (keyName, val, desc) => {
+          let found = false;
+          for (let i = 1; i < values.length; i++) {
+            if (values[i][0] === keyName) {
+              sheet.getRange(i + 1, 2).setNumberFormat('@').setValue(sanitizeCell(val));
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            const nextRow = sheet.getLastRow() + 1;
+            sheet.appendRow([keyName, sanitizeCell(val), desc]);
+            sheet.getRange(nextRow, 2).setNumberFormat('@').setValue(sanitizeCell(val));
+          }
+        };
+
+        if (payload.teacherPassword !== undefined) {
+          updateOrAppend('교사_비밀번호', String(payload.teacherPassword), '교사용 관리 콘솔 접속 비밀번호');
+        }
+        if (payload.allowClassOverview !== undefined) {
+          updateOrAppend('전체_모둠_데이터_확인_허용', payload.allowClassOverview ? 'TRUE' : 'FALSE', '학생 화면에서 학급 전체 모둠 데이터 확인 버튼 노출 여부');
+        }
+        if (payload.allowAutoAnalysis !== undefined) {
+          updateOrAppend('컴퓨터_자동_분석_그래프_허용', payload.allowAutoAnalysis ? 'TRUE' : 'FALSE', '학생 화면에서 컴퓨터 자동 분석 탭 및 최적선 비교 노출 여부');
+        }
+        if (payload.requireGroupPassword !== undefined) {
+          updateOrAppend('모둠_비밀번호_인증_사용', payload.requireGroupPassword ? 'TRUE' : 'FALSE', '학생 입장 시 교사가 배부한 모둠 비밀번호 필수 입력 여부');
+        }
+      } finally {
+        lock.releaseLock();
       }
 
       return ContentService.createTextOutput(JSON.stringify({
@@ -1012,30 +1158,49 @@ function doPost(e) {
     // 2. 모둠 비밀번호 일괄 저장 (교사용 일괄 배정)
     if (action === 'saveAllGroupPasswords') {
       ensurePasswordsSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
-      sheet.getRange("A:E").setNumberFormat('@');
       const incoming = (payload && payload.passwords) || {};
-      const timestamp = new Date();
-      
-      // 기존 2행 이하 지우고 새로 전체 쓰기
-      const lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
-        sheet.getRange(2, 1, lastRow - 1, 6).clearContent();
+
+      // 빈 목록이 오면 기존 데이터를 지우지 않고 그대로 취소한다
+      // (요청 파싱 오류/빈 payload로 전체 비밀번호가 삭제되는 사고 방지)
+      if (Object.keys(incoming).length === 0) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: '빈 비밀번호 목록은 저장할 수 없습니다 (기존 데이터 보호를 위해 취소되었습니다).'
+        })).setMimeType(ContentService.MimeType.JSON);
       }
-      
-      const rowsToAppend = [];
-      for (const [key, pw] of Object.entries(incoming)) {
-        if (!pw) continue;
-        const parts = key.split('__');
-        if (parts.length === 4) {
-          rowsToAppend.push([String(parts[0]), String(parts[1]), String(parts[2]), String(parts[3]), String(pw), timestamp]);
+
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+        sheet.getRange("A:E").setNumberFormat('@');
+        const timestamp = new Date();
+
+        // 기존 2행 이하 지우고 새로 전체 쓰기
+        const lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          sheet.getRange(2, 1, lastRow - 1, 6).clearContent();
         }
+
+        const rowsToAppend = [];
+        for (const [key, pw] of Object.entries(incoming)) {
+          if (!pw) continue;
+          const parts = key.split('__');
+          if (parts.length === 4) {
+            rowsToAppend.push([
+              sanitizeCell(parts[0]), sanitizeCell(parts[1]), sanitizeCell(parts[2]), sanitizeCell(parts[3]),
+              sanitizeCell(pw), timestamp
+            ]);
+          }
+        }
+
+        if (rowsToAppend.length > 0) {
+          sheet.getRange(2, 1, rowsToAppend.length, 6).setNumberFormat('@').setValues(rowsToAppend);
+        }
+      } finally {
+        lock.releaseLock();
       }
-      
-      if (rowsToAppend.length > 0) {
-        sheet.getRange(2, 1, rowsToAppend.length, 6).setNumberFormat('@').setValues(rowsToAppend);
-      }
-      
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: '모둠 비밀번호 전체가 스프레드시트에 동기화되었습니다.'
@@ -1045,36 +1210,42 @@ function doPost(e) {
     // 3. 모둠 비밀번호 단일 저장 / 등록
     if (action === 'saveGroupPassword') {
       ensurePasswordsSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
-      sheet.getRange("A:E").setNumberFormat('@');
-      const data = sheet.getDataRange().getValues();
-      const timestamp = new Date();
-      let foundIndex = -1;
-      
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
-          foundIndex = i + 1;
-          break;
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+        sheet.getRange("A:E").setNumberFormat('@');
+        const data = sheet.getDataRange().getValues();
+        const timestamp = new Date();
+        let foundIndex = -1;
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
+            foundIndex = i + 1;
+            break;
+          }
         }
+
+        if (foundIndex > 0) {
+          sheet.getRange(foundIndex, 5).setNumberFormat('@').setValue(sanitizeCell(payload.password));
+          sheet.getRange(foundIndex, 6).setValue(timestamp);
+        } else {
+          const nextRow = sheet.getLastRow() + 1;
+          sheet.appendRow([
+            sanitizeCell(payload.topicId),
+            sanitizeCell(payload.grade),
+            sanitizeCell(payload.classNum),
+            sanitizeCell(payload.groupName),
+            sanitizeCell(payload.password),
+            timestamp
+          ]);
+          sheet.getRange(nextRow, 5).setNumberFormat('@').setValue(sanitizeCell(payload.password));
+        }
+      } finally {
+        lock.releaseLock();
       }
-      
-      if (foundIndex > 0) {
-        sheet.getRange(foundIndex, 5).setNumberFormat('@').setValue(String(payload.password));
-        sheet.getRange(foundIndex, 6).setValue(timestamp);
-      } else {
-        const nextRow = sheet.getLastRow() + 1;
-        sheet.appendRow([
-          String(payload.topicId),
-          String(payload.grade),
-          String(payload.classNum),
-          String(payload.groupName),
-          String(payload.password),
-          timestamp
-        ]);
-        sheet.getRange(nextRow, 5).setNumberFormat('@').setValue(String(payload.password));
-      }
-      
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: '모둠 비밀번호가 스프레드시트에 저장되었습니다.'
@@ -1084,16 +1255,22 @@ function doPost(e) {
     // 3. 모둠 비밀번호 초기화 (교사용)
     if (action === 'resetGroupPassword') {
       ensurePasswordsSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
-      const data = sheet.getDataRange().getValues();
-      
-      for (let i = data.length - 1; i >= 1; i--) {
-        const row = data[i];
-        if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
-          sheet.deleteRow(i + 1);
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+        const data = sheet.getDataRange().getValues();
+
+        for (let i = data.length - 1; i >= 1; i--) {
+          const row = data[i];
+          if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
+            sheet.deleteRow(i + 1);
+          }
         }
+      } finally {
+        lock.releaseLock();
       }
-      
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: '모둠 비밀번호가 초기화되었습니다.'
@@ -1104,82 +1281,102 @@ function doPost(e) {
     if (action === 'saveGroupData') {
       ensureDataSheet(ss);
       ensurePasswordsSheet(ss);
-      
-      // 모둠 비밀번호가 전달되었으면 비밀번호 시트에도 자동 동기화
-      if (payload.groupPassword) {
-        const pwSheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
-        const pwData = pwSheet.getDataRange().getValues();
-        let pwFound = false;
-        for (let i = 1; i < pwData.length; i++) {
-          const row = pwData[i];
-          if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
-            pwSheet.getRange(i + 1, 5).setValue(String(payload.groupPassword));
-            pwSheet.getRange(i + 1, 6).setValue(new Date());
-            pwFound = true;
-            break;
+
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        // 모둠 비밀번호가 전달되었으면 비밀번호 시트에 반영한다.
+        // 단, 이미 다른 비밀번호가 설정된 모둠은 임의로 덮어쓰지 않는다 -
+        // 그렇지 않으면 인증되지 않은 요청이 다른 모둠의 비밀번호를 마음대로
+        // 바꿔서 진짜 학생들을 잠글 수 있다. 신규 등록(빈 값)이거나 이미 같은
+        // 비밀번호로 재저장하는 경우에만 기록한다.
+        if (payload.groupPassword) {
+          const pwSheet = ss.getSheetByName(SHEET_PASSWORDS_NAME);
+          const pwData = pwSheet.getDataRange().getValues();
+          let pwFound = false;
+          for (let i = 1; i < pwData.length; i++) {
+            const row = pwData[i];
+            if (row[0] == payload.topicId && row[1] == payload.grade && row[2] == payload.classNum && row[3] == payload.groupName) {
+              pwFound = true;
+              const existingPw = String(row[4] || '');
+              if (!existingPw || existingPw === String(payload.groupPassword)) {
+                pwSheet.getRange(i + 1, 5).setNumberFormat('@').setValue(sanitizeCell(payload.groupPassword));
+                pwSheet.getRange(i + 1, 6).setValue(new Date());
+              }
+              break;
+            }
           }
-        }
-        if (!pwFound) {
-          pwSheet.appendRow([
-            payload.topicId,
-            payload.grade,
-            payload.classNum,
-            payload.groupName,
-            String(payload.groupPassword),
-            new Date()
-          ]);
-        }
-      }
-
-      const sheet = ss.getSheetByName(SHEET_DATA_NAME);
-      const timestamp = new Date();
-      
-      // 기존 모둠 데이터 삭제 후 최신 데이터로 저장
-      const allRows = sheet.getDataRange().getValues();
-      for (let i = allRows.length - 1; i >= 1; i--) {
-        const r = allRows[i];
-        if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
-          sheet.deleteRow(i + 1);
-        }
-      }
-      
-      // 문항별 답변 추출 및 전체 통합 답변 JSON 구성
-      const notes = payload.conclusionNotes || {};
-      let q1 = notes.summary || (notes.answers && notes.answers['q1']) || '';
-      let q2 = notes.principle || (notes.answers && notes.answers['q2']) || '';
-      let q3 = notes.errorAnalysis || (notes.answers && notes.answers['q3']) || '';
-      
-      let fullReportJson = '';
-      if (notes.answers && typeof notes.answers === 'object') {
-        fullReportJson = JSON.stringify(notes.answers);
-      } else {
-        fullReportJson = JSON.stringify({ q1: q1, q2: q2, q3: q3 });
-      }
-
-      // 점 데이터 기록
-      if (payload.points && payload.points.length > 0) {
-        payload.points.forEach((pt, idx) => {
-          if (pt.x !== '' && pt.y !== '') {
-            sheet.appendRow([
-              timestamp,
-              payload.topicId,
-              payload.grade,
-              payload.classNum,
-              payload.groupName,
-              pt.order || (idx + 1),
-              pt.x,
-              pt.y,
-              pt.isOutlier ? 'Y' : 'N',
-              pt.note || '',
-              q1,
-              q2,
-              q3,
-              fullReportJson
+          if (!pwFound) {
+            const newPwRow = pwSheet.getLastRow() + 1;
+            pwSheet.appendRow([
+              sanitizeCell(payload.topicId),
+              sanitizeCell(payload.grade),
+              sanitizeCell(payload.classNum),
+              sanitizeCell(payload.groupName),
+              sanitizeCell(payload.groupPassword),
+              new Date()
             ]);
+            // appendRow alone lets Sheets auto-format the password column as a
+            // number (e.g. "0000" -> 0) since it's never told to stay text here -
+            // force it back to plain text after the fact, matching every other
+            // password-writing path in this file. Confirmed live: without this,
+            // a password of "0000" was silently stored as the number 0.
+            pwSheet.getRange(newPwRow, 5).setNumberFormat('@').setValue(sanitizeCell(payload.groupPassword));
           }
-        });
+        }
+
+        const sheet = ss.getSheetByName(SHEET_DATA_NAME);
+        const timestamp = new Date();
+
+        // 기존 모둠 데이터 삭제 후 최신 데이터로 저장
+        const allRows = sheet.getDataRange().getValues();
+        for (let i = allRows.length - 1; i >= 1; i--) {
+          const r = allRows[i];
+          if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
+            sheet.deleteRow(i + 1);
+          }
+        }
+
+        // 문항별 답변 추출 및 전체 통합 답변 JSON 구성
+        const notes = payload.conclusionNotes || {};
+        let q1 = notes.summary || (notes.answers && notes.answers['q1']) || '';
+        let q2 = notes.principle || (notes.answers && notes.answers['q2']) || '';
+        let q3 = notes.errorAnalysis || (notes.answers && notes.answers['q3']) || '';
+
+        let fullReportJson = '';
+        if (notes.answers && typeof notes.answers === 'object') {
+          fullReportJson = JSON.stringify(notes.answers);
+        } else {
+          fullReportJson = JSON.stringify({ q1: q1, q2: q2, q3: q3 });
+        }
+
+        // 점 데이터 기록 (자유 입력 텍스트는 수식 인젝션 방지 처리)
+        if (payload.points && payload.points.length > 0) {
+          payload.points.forEach((pt, idx) => {
+            if (pt.x !== '' && pt.y !== '') {
+              sheet.appendRow([
+                timestamp,
+                sanitizeCell(payload.topicId),
+                sanitizeCell(payload.grade),
+                sanitizeCell(payload.classNum),
+                sanitizeCell(payload.groupName),
+                pt.order || (idx + 1),
+                pt.x,
+                pt.y,
+                pt.isOutlier ? 'Y' : 'N',
+                sanitizeCell(pt.note || ''),
+                sanitizeCell(q1),
+                sanitizeCell(q2),
+                sanitizeCell(q3),
+                sanitizeCell(fullReportJson)
+              ]);
+            }
+          });
+        }
+      } finally {
+        lock.releaseLock();
       }
-      
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: '저장 완료'
@@ -1189,35 +1386,51 @@ function doPost(e) {
     // 5. 탐구 주제 목록 저장 (전체 갱신, 가변 문항 완벽 지원)
     if (action === 'saveTopics') {
       ensureSettingsSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_SETTINGS_NAME);
       const topics = (payload && payload.topics) || [];
-      
-      // 기존 2행 이하의 데이터 지우기
-      const lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
-        sheet.getRange(2, 1, lastRow - 1, 14).clearContent();
+
+      // 빈 목록이 오면 기존 주제를 모두 지우지 않고 취소한다
+      // (요청 파싱 오류/빈 payload로 전체 주제가 삭제되는 사고 방지)
+      if (topics.length === 0) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: '빈 주제 목록은 저장할 수 없습니다 (기존 데이터 보호를 위해 취소되었습니다).'
+        })).setMimeType(ContentService.MimeType.JSON);
       }
-      
-      topics.forEach((t) => {
-        const questionsStr = t.rawQuestions || (Array.isArray(t.coreQuestions) ? t.coreQuestions.join('\\n') : (t.coreQuestions || ''));
-        sheet.appendRow([
-          t.topicId || '',
-          t.title || '',
-          Array.isArray(t.grades) ? t.grades.join(', ') : (t.grades || ''),
-          Array.isArray(t.classes) ? t.classes.join(', ') : (t.classes || ''),
-          Array.isArray(t.groups) ? t.groups.join(', ') : (t.groups || ''),
-          t.xVarName || '',
-          t.xUnit || '',
-          t.yVarName || '',
-          t.yUnit || '',
-          t.defaultTrendline || 'linear',
-          t.conceptGuide || '',
-          t.slopeMeaningGuide || '',
-          t.active === false ? 'N' : 'Y',
-          questionsStr
-        ]);
-      });
-      
+
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_SETTINGS_NAME);
+
+        // 기존 2행 이하의 데이터 지우기
+        const lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          sheet.getRange(2, 1, lastRow - 1, 14).clearContent();
+        }
+
+        topics.forEach((t) => {
+          const questionsStr = t.rawQuestions || (Array.isArray(t.coreQuestions) ? t.coreQuestions.join('\\n') : (t.coreQuestions || ''));
+          sheet.appendRow([
+            sanitizeCell(t.topicId || ''),
+            sanitizeCell(t.title || ''),
+            Array.isArray(t.grades) ? t.grades.join(', ') : (t.grades || ''),
+            Array.isArray(t.classes) ? t.classes.join(', ') : (t.classes || ''),
+            Array.isArray(t.groups) ? t.groups.join(', ') : (t.groups || ''),
+            sanitizeCell(t.xVarName || ''),
+            sanitizeCell(t.xUnit || ''),
+            sanitizeCell(t.yVarName || ''),
+            sanitizeCell(t.yUnit || ''),
+            t.defaultTrendline || 'linear',
+            sanitizeCell(t.conceptGuide || ''),
+            sanitizeCell(t.slopeMeaningGuide || ''),
+            t.active === false ? 'N' : 'Y',
+            sanitizeCell(questionsStr)
+          ]);
+        });
+      } finally {
+        lock.releaseLock();
+      }
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: '탐구 주제 목록이 스프레드시트에 저장되었습니다.'
@@ -1227,41 +1440,47 @@ function doPost(e) {
     // 6. 교사 평가 및 피드백 저장 (채점, 코멘트, 루브릭)
     if (action === 'saveEvaluation') {
       ensureEvaluationsSheet(ss);
-      const sheet = ss.getSheetByName(SHEET_EVALUATIONS_NAME);
-      sheet.getRange("A:L").setNumberFormat('@');
-      const timestamp = new Date();
-      const allRows = sheet.getDataRange().getValues();
-      let foundIndex = -1;
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        const sheet = ss.getSheetByName(SHEET_EVALUATIONS_NAME);
+        sheet.getRange("A:L").setNumberFormat('@');
+        const timestamp = new Date();
+        const allRows = sheet.getDataRange().getValues();
+        let foundIndex = -1;
 
-      for (let i = 1; i < allRows.length; i++) {
-        const r = allRows[i];
-        if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
-          foundIndex = i + 1;
-          break;
+        for (let i = 1; i < allRows.length; i++) {
+          const r = allRows[i];
+          if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
+            foundIndex = i + 1;
+            break;
+          }
         }
-      }
 
-      const rubrics = payload.rubricScores || {};
-      const evalRow = [
-        timestamp,
-        String(payload.topicId || ''),
-        String(payload.grade || ''),
-        String(payload.classNum || ''),
-        String(payload.groupName || ''),
-        String(payload.score || ''),
-        String(payload.feedbackComment || ''),
-        String(rubrics.accuracy || ''),
-        String(rubrics.graphInterpretation || ''),
-        String(rubrics.scientificReasoning || ''),
-        String(rubrics.errorAnalysis || ''),
-        String(rubrics.attitude || ''),
-        String(payload.evaluator || '교사')
-      ];
+        const rubrics = payload.rubricScores || {};
+        const evalRow = [
+          timestamp,
+          sanitizeCell(payload.topicId || ''),
+          sanitizeCell(payload.grade || ''),
+          sanitizeCell(payload.classNum || ''),
+          sanitizeCell(payload.groupName || ''),
+          sanitizeCell(payload.score || ''),
+          sanitizeCell(payload.feedbackComment || ''),
+          String(rubrics.accuracy || ''),
+          String(rubrics.graphInterpretation || ''),
+          String(rubrics.scientificReasoning || ''),
+          String(rubrics.errorAnalysis || ''),
+          String(rubrics.attitude || ''),
+          sanitizeCell(payload.evaluator || '교사')
+        ];
 
-      if (foundIndex > 0) {
-        sheet.getRange(foundIndex, 1, 1, 13).setValues([evalRow]);
-      } else {
-        sheet.appendRow(evalRow);
+        if (foundIndex > 0) {
+          sheet.getRange(foundIndex, 1, 1, 13).setValues([evalRow]);
+        } else {
+          sheet.appendRow(evalRow);
+        }
+      } finally {
+        lock.releaseLock();
       }
 
       return ContentService.createTextOutput(JSON.stringify({

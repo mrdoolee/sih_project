@@ -19,7 +19,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ReferenceLine
 } from 'recharts';
 import {
@@ -87,7 +86,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
   const groupMetrics = useMemo(() => {
     return groupNames.map((gName) => {
       const gData = allGroupsData.find((d) => d.groupName === gName);
-      const points = gData ? gData.points : [];
+      const points = gData?.points || [];
       const valid = filterValidPoints(points);
       const trendType: TrendlineType = gData?.selectedTrendline || topic.defaultTrendline || 'linear';
       const trend = computeTrendline(trendType, points);
@@ -104,6 +103,13 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
       };
     });
   }, [groupNames, allGroupsData, topic]);
+
+  // Raw X/Y matrix: one row per measurement index, two columns per group.
+  const measurementMatrix = useMemo(() => {
+    const groups = groupMetrics.filter((gm) => gm.hasData);
+    const maxRows = groups.reduce((acc, gm) => Math.max(acc, gm.points.length), 0);
+    return { groups, maxRows };
+  }, [groupMetrics]);
 
   // Prepare multi-series chart data
   const { chartData, xDomain, yDomain } = useMemo(() => {
@@ -174,7 +180,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
   }, [groupMetrics]);
 
   const classAvgR2 = useMemo(() => {
-    const validTrends = groupMetrics.filter((g) => g.hasData && g.trend.r2 > 0);
+    const validTrends = groupMetrics.filter((g) => g.hasData);
     if (validTrends.length === 0) return null;
     const sum = validTrends.reduce((acc, g) => acc + g.trend.r2, 0);
     return (sum / validTrends.length).toFixed(4);
@@ -284,13 +290,32 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
             <div className="space-y-4">
               {/* Overlay Chart */}
               <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200">
-                <div className="flex items-center justify-between mb-3 text-xs">
-                  <span className="font-bold text-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3 text-xs">
+                  <span className="font-bold text-slate-700 whitespace-nowrap">
                     전체 모둠 측정점 및 추세선 겹쳐보기 (Multi-Series Overlay)
                   </span>
-                  <span className="text-slate-400">
+                  <span className="text-slate-400 whitespace-nowrap">
                     각 모둠별 고유 색상 점과 실선 추세선
                   </span>
+                </div>
+
+                {/* Custom legend: recharts' own legend emitted two ragged rows
+                    (점 + 추세 per group), so one badge per group is used. */}
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 mb-3">
+                  {groupMetrics
+                    .filter((gm) => gm.hasData)
+                    .map((gm) => (
+                      <span
+                        key={gm.groupName}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700 whitespace-nowrap"
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: colorMap[gm.groupName] }}
+                        />
+                        <span>{gm.groupName}</span>
+                      </span>
+                    ))}
                 </div>
 
                 <div className="h-[360px] w-full">
@@ -337,39 +362,37 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                           }}
                         />
                         <Tooltip
+                          isAnimationActive={false}
                           content={({ active, payload }) => {
-                            if (active && payload && payload.length) {
-                              const item = payload[0].payload;
-                              return (
-                                <div className="bg-slate-900 text-white p-3 rounded-lg shadow-lg text-xs space-y-1.5 max-w-xs">
-                                  <div className="font-bold text-amber-300 border-b border-slate-700 pb-1">
-                                    {topic.xVarName} (X) = {item.x} {topic.xUnit}
-                                  </div>
-                                  {groupMetrics.map((gm) => {
-                                    const actual = item[`${gm.groupName}_actual`];
-                                    const trend = item[`${gm.groupName}_trend`];
-                                    if (actual === undefined && trend === undefined) return null;
-                                    return (
-                                      <div key={gm.groupName} className="flex items-center justify-between gap-3">
-                                        <span className="font-semibold" style={{ color: colorMap[gm.groupName] }}>
-                                          {gm.groupName}:
-                                        </span>
-                                        <span className="text-slate-200">
-                                          {actual !== undefined ? `실측 ${actual}` : `추세 ${trend}`} {topic.yUnit}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
+                            if (!active || !payload || payload.length === 0) return null;
+                            const item = payload[0].payload;
+
+                            // Only surface real measured points - trendline values are
+                            // intentionally omitted so hovering the curve shows nothing.
+                            const measured = groupMetrics
+                              .map((gm) => ({ gm, actual: item[`${gm.groupName}_actual`] }))
+                              .filter((entry) => entry.actual !== undefined && entry.actual !== null);
+
+                            if (measured.length === 0) return null;
+
+                            return (
+                              <div className="bg-slate-900 text-white p-3 rounded-lg shadow-lg text-xs space-y-1.5 max-w-xs">
+                                <div className="font-bold text-amber-300 border-b border-slate-700 pb-1">
+                                  {topic.xVarName} (X) = {item.x} {topic.xUnit}
                                 </div>
-                              );
-                            }
-                            return null;
+                                {measured.map(({ gm, actual }) => (
+                                  <div key={gm.groupName} className="flex items-center justify-between gap-3">
+                                    <span className="font-semibold" style={{ color: colorMap[gm.groupName] }}>
+                                      {gm.groupName}:
+                                    </span>
+                                    <span className="text-slate-200">
+                                      {actual} {topic.yUnit}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
                           }}
-                        />
-                        <Legend
-                          verticalAlign="top"
-                          align="right"
-                          wrapperStyle={{ paddingBottom: 10, fontSize: 11 }}
                         />
                         <ReferenceLine x={0} stroke="#cbd5e1" />
                         <ReferenceLine y={0} stroke="#cbd5e1" />
@@ -447,7 +470,86 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
             </div>
           ) : (
             /* Table View */
-            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+            <div className="space-y-5">
+              {/* Raw Measurement Matrix - every group's X/Y pairs side by side */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="bg-slate-100 border-b border-slate-200 px-3 py-2.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-700">
+                    모둠별 측정값 통합표 ({topic.xVarName} / {topic.yVarName})
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    단위: {topic.xVarName} [{topic.xUnit}] · {topic.yVarName} [{topic.yUnit}]
+                  </span>
+                </div>
+
+                {measurementMatrix.groups.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400 bg-white">
+                    아직 입력된 모둠 측정값이 없습니다.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 text-slate-700 font-bold">
+                        <tr className="border-b border-slate-200">
+                          <th
+                            rowSpan={2}
+                            className="py-2 px-3 text-center align-middle whitespace-nowrap border-r border-slate-200 w-20"
+                          >
+                            측정 회차
+                          </th>
+                          {measurementMatrix.groups.map((gm) => (
+                            <th
+                              key={gm.groupName}
+                              colSpan={2}
+                              className="py-2 px-3 text-center whitespace-nowrap border-r border-slate-200 last:border-r-0"
+                              style={{ color: colorMap[gm.groupName] }}
+                            >
+                              {gm.groupName}
+                            </th>
+                          ))}
+                        </tr>
+                        <tr className="border-b border-slate-200 text-[11px] text-slate-500">
+                          {measurementMatrix.groups.map((gm) => (
+                            <React.Fragment key={gm.groupName}>
+                              <th className="py-1.5 px-3 text-center font-semibold whitespace-nowrap">
+                                {topic.xVarName}
+                              </th>
+                              <th className="py-1.5 px-3 text-center font-semibold whitespace-nowrap border-r border-slate-200 last:border-r-0">
+                                {topic.yVarName}
+                              </th>
+                            </React.Fragment>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white text-slate-800">
+                        {Array.from({ length: measurementMatrix.maxRows }).map((_, rowIdx) => (
+                          <tr key={rowIdx} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-2 px-3 text-center font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">
+                              {rowIdx + 1}
+                            </td>
+                            {measurementMatrix.groups.map((gm) => {
+                              const pt = gm.points[rowIdx];
+                              return (
+                                <React.Fragment key={gm.groupName}>
+                                  <td className="py-2 px-3 text-center font-mono">
+                                    {pt ? pt.x : '-'}
+                                  </td>
+                                  <td className="py-2 px-3 text-center font-mono font-semibold text-indigo-800 border-r border-slate-200 last:border-r-0">
+                                    {pt ? pt.y : '-'}
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Per-group statistics comparison */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
@@ -457,7 +559,6 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                     <th className="py-2.5 px-3 text-center">기울기 (a)</th>
                     <th className="py-2.5 px-3 text-center">결정계수 (R²)</th>
                     <th className="py-2.5 px-3">학생 결론 요약</th>
-                    <th className="py-2.5 px-3 text-right">저장 시각</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-slate-800 bg-white">
@@ -499,14 +600,12 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                         <td className="py-2.5 px-3 max-w-[240px] truncate text-slate-600">
                           {gm.conclusion || '(작성 미완료)'}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-slate-400 text-[11px]">
-                          {gm.lastSavedAt || '-'}
-                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

@@ -76,6 +76,14 @@ function calcAxisGrid(maxVal: number, targetMajorTicks = 5): AxisGridConfig {
   return { majorStep: step, minorStep, domainMax, majorTicks, minorTicks };
 }
 
+// Module-level constant (not inside the component) so it's always the exact
+// same reference across renders. It used to be re-created as a fresh object
+// literal on every render, which cascaded through dataToScreen -> isPointMatched
+// -> matchStatus -> the parent-sync effect's dependency array, causing that
+// effect to fire (and push a new manualGraphData object up to the parent) on
+// every single render - a genuine infinite render loop, confirmed via testing.
+const GRAPH_MARGIN = { top: 25, right: 30, bottom: 45, left: 55 };
+
 export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
   topic,
   groupName,
@@ -133,20 +141,29 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     () => manualGraphData?.hasAdjustedRuler ?? false
   );
 
+  // When true, the next bounds-change default-position effect should skip applying
+  // its defaults (set right after restoring saved line/curve positions for a group).
+  const skipNextBoundsResetRef = useRef(false);
+
   // Sync external manualGraphData updates (e.g. when group changes)
   useEffect(() => {
+    let hasRestoredPositions = false;
     if (manualGraphData) {
       if (manualGraphData.studentPoints) setStudentPoints(manualGraphData.studentPoints);
       if (manualGraphData.toolMode) setToolMode(manualGraphData.toolMode);
       if (typeof manualGraphData.lineOriginFixed === 'boolean') setLineOriginFixed(manualGraphData.lineOriginFixed);
-      if (manualGraphData.linePoint1) setLinePoint1(manualGraphData.linePoint1);
-      if (manualGraphData.linePoint2) setLinePoint2(manualGraphData.linePoint2);
-      if (manualGraphData.curveP1) setCurveP1(manualGraphData.curveP1);
-      if (manualGraphData.curveP2) setCurveP2(manualGraphData.curveP2);
-      if (manualGraphData.curveP3) setCurveP3(manualGraphData.curveP3);
+      if (manualGraphData.linePoint1) { setLinePoint1(manualGraphData.linePoint1); hasRestoredPositions = true; }
+      if (manualGraphData.linePoint2) { setLinePoint2(manualGraphData.linePoint2); hasRestoredPositions = true; }
+      if (manualGraphData.curveP1) { setCurveP1(manualGraphData.curveP1); hasRestoredPositions = true; }
+      if (manualGraphData.curveP2) { setCurveP2(manualGraphData.curveP2); hasRestoredPositions = true; }
+      if (manualGraphData.curveP3) { setCurveP3(manualGraphData.curveP3); hasRestoredPositions = true; }
       if (manualGraphData.freehandPaths) setFreehandPaths(manualGraphData.freehandPaths);
       if (typeof manualGraphData.hasAdjustedRuler === 'boolean') setHasAdjustedRuler(manualGraphData.hasAdjustedRuler);
     }
+    // Tell the bounds-based default-position effect (below) to skip its very next run,
+    // since we just restored real saved line/curve positions for this group and it
+    // would otherwise immediately stomp them back to computed defaults.
+    skipNextBoundsResetRef.current = hasRestoredPositions;
   }, [groupName, topic.topicId]);
 
   // Toggles for hints & auto comparison
@@ -221,8 +238,8 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     };
   }, [xGrid, yGrid]);
 
-  // Margins for axes
-  const margin = { top: 25, right: 30, bottom: 45, left: 55 };
+  // Margins for axes (module-level constant - see GRAPH_MARGIN above)
+  const margin = GRAPH_MARGIN;
   const plotWidth = Math.max(100, dimensions.width - margin.left - margin.right);
   const plotHeight = Math.max(100, dimensions.height - margin.top - margin.bottom);
 
@@ -264,6 +281,17 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
 
   // Initialize Line & Curve Points on bounds change or topic change
   useEffect(() => {
+    // Skip once right after restoring saved positions for this group (see the
+    // manualGraphData sync effect above) - the saved positions must not be
+    // immediately overwritten by computed defaults.
+    if (skipNextBoundsResetRef.current) {
+      skipNextBoundsResetRef.current = false;
+      return;
+    }
+    // Skip if the student already customized the ruler/curve - editing a data
+    // table row (which changes bounds) must not snap it back to the default.
+    if (hasAdjustedRuler) return;
+
     setLinePoint1({ x: 0, y: 0 });
     setLinePoint2({ x: bounds.maxX * 0.75, y: bounds.maxY * 0.75 });
 
@@ -407,6 +435,11 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
       return;
     }
 
+    // Capture the pointer so drags (points, line/curve handles, freehand strokes)
+    // keep receiving move/up events even if the cursor leaves the SVG's bounds
+    // while the button/finger is still held.
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+
     // Freehand Drawing Mode
     if (toolMode === 'freehand') {
       setIsFreehandDrawing(true);
@@ -543,7 +576,13 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    // Release pointer capture acquired in handlePointerDown, if any.
+    const target = e.currentTarget as Element;
+    if (target.hasPointerCapture(e.pointerId)) {
+      target.releasePointerCapture(e.pointerId);
+    }
+
     if (toolMode === 'freehand' && isFreehandDrawing) {
       if (currentStroke.length > 1) {
         setFreehandPaths((prev) => [...prev, currentStroke]);
@@ -629,18 +668,6 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     if (!selectedPointId) return;
     setStudentPoints((prev) => prev.filter((p) => p.id !== selectedPointId));
     setSelectedPointId(null);
-  };
-
-  // Auto plot all points from data table
-  const handleAutoPlotFromTable = () => {
-    if (validPoints.length === 0) return;
-    const newStudentPts: ManualPlotPoint[] = validPoints.map((vp, idx) => ({
-      id: `sp_auto_${idx}_${Date.now()}`,
-      x: vp.x,
-      y: vp.y,
-      matchedDataId: vp.id
-    }));
-    setStudentPoints(newStudentPts);
   };
 
   return (
@@ -1332,16 +1359,6 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
 
         {/* Quick actions */}
         <div className="flex items-center gap-2">
-          {studentPoints.length === 0 && validPoints.length > 0 && (
-            <button
-              type="button"
-              onClick={handleAutoPlotFromTable}
-              className="px-2.5 py-1 text-xs bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-medium transition-colors"
-            >
-              표 데이터로 점 자동 배치
-            </button>
-          )}
-
           {allowAutoAnalysis && onSwitchToAuto && (
             <button
               type="button"

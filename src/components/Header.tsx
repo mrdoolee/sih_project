@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <h1 className="text-lg font-bold text-slate-900 leading-tight">
-              과학 탐구 보고서 & 데이터 도우미
+              과학 탐구 활동 보고서 작성 도우미
             </h1>
           </div>
         </div>

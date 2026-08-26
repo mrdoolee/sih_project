@@ -258,7 +258,15 @@ export function calculateQuadratic(points: ValidPoint[]): TrendlineResult {
     [matrix[i], matrix[maxRow]] = [matrix[maxRow], matrix[i]];
 
     if (Math.abs(matrix[i][i]) < 1e-12) {
-      return calculateLinear(points); // fallback to linear
+      // x값이 3개 이상 서로 다르지 않아 2차 회귀가 불가능 (행렬이 특이함) - 선형으로 대체하되
+      // type은 그대로 'linear'를 반환해 해석 로직이 2차로 오인하지 않도록 하고,
+      // name/equation에 대체 사실을 명시해 사용자가 실제로는 요청한 2차 곡선이 아님을 알 수 있게 한다.
+      const fallback = calculateLinear(points);
+      return {
+        ...fallback,
+        name: `${fallback.name} (2차 회귀 불가 - 선형으로 대체됨)`,
+        equation: `[선형으로 대체됨: x값 중복으로 2차 회귀 불가] ${fallback.equation}`
+      };
     }
 
     for (let k = i + 1; k < 3; k++) {
@@ -338,9 +346,20 @@ export function generateScientificInsight(
   }
 
   // Check R2 quality
+  // A fit is only statistically meaningful when the number of data points exceeds the
+  // number of free parameters in the model (2 for linear/proportional/inverse, 3 for
+  // quadratic). With exactly that many points (or fewer), R² is 1 by construction and
+  // says nothing about the real relationship, so that case is called out explicitly
+  // before falling through to the normal R² thresholds.
+  const modelParamCount = currentResult.type === 'quadratic' ? 3 : 2;
+  const isMinimalDataFit = currentResult.validPointsCount > 0 && currentResult.validPointsCount <= modelParamCount;
+
   let r2Quality: 'excellent' | 'good' | 'moderate' | 'poor' = 'moderate';
   let r2Comment = '';
-  if (currentResult.r2 >= 0.98) {
+  if (isMinimalDataFit) {
+    r2Quality = 'moderate';
+    r2Comment = `측정값이 ${currentResult.validPointsCount}개로 이 모델의 변수 개수(${modelParamCount}개)와 같거나 적어, R² = ${currentResult.r2.toFixed(4)}는 수학적으로 항상 1에 가깝게 계산될 뿐 실제 상관관계를 보장하지 않습니다. 데이터가 부족하여 신뢰도가 낮으니 측정을 더 반복해 보세요.`;
+  } else if (currentResult.r2 >= 0.98) {
     r2Quality = 'excellent';
     r2Comment = `결정계수 R² = ${currentResult.r2.toFixed(4)}로 실험 데이터가 이론적 모델과 매우 일치하며 오차가 극히 적습니다.`;
   } else if (currentResult.r2 >= 0.92) {
@@ -360,7 +379,15 @@ export function generateScientificInsight(
   let desc = '';
   let slopeInterpretation = topic.slopeMeaningGuide;
 
-  if (currentResult.type === 'proportional' || (currentResult.type === 'linear' && Math.abs(currentResult.intercept || 0) < 0.2)) {
+  // Whether an intercept counts as "close enough to the origin" to call the relationship
+  // 정비례 depends on the scale of the y-data itself, not a fixed absolute number - an
+  // intercept of 0.15 is enormous for y-values around 0.001-0.01, but negligible for
+  // y-values in the thousands. Use 5% of the mean |y| (guarded against a near-zero scale)
+  // as the relative threshold instead of a hardcoded literal.
+  const meanAbsY = valid.length > 0 ? valid.reduce((sum, p) => sum + Math.abs(p.y), 0) / valid.length : 0;
+  const proportionalInterceptThreshold = 0.05 * (meanAbsY > 1e-9 ? meanAbsY : 1);
+
+  if (currentResult.type === 'proportional' || (currentResult.type === 'linear' && Math.abs(currentResult.intercept || 0) < proportionalInterceptThreshold)) {
     relType = 'direct_proportional';
     const slopeVal = currentResult.slope ?? 1;
     relTitle = `${topic.xVarName}와 ${topic.yVarName}는 정비례 관계 (y = ax)`;
@@ -392,7 +419,7 @@ export function generateScientificInsight(
     const maxIdx = residuals.indexOf(maxRes);
     const meanY = valid.reduce((a, b) => a + b.y, 0) / valid.length;
     
-    if (meanY > 0 && maxRes / meanY > 0.25) {
+    if (Math.abs(meanY) > 0 && maxRes / Math.abs(meanY) > 0.25) {
       const suspiciousPoint = valid[maxIdx];
       outlierWarning = `측정점 (X=${suspiciousPoint.x}, Y=${suspiciousPoint.y})이 추세선 예측치에서 다소 벗어나 있습니다. 눈금 읽기나 실험 조건에 이상이 없었는지 확인해보세요.`;
     }

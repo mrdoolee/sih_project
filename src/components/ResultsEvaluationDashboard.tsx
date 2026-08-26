@@ -14,6 +14,7 @@ import {
   getStoredEvaluations
 } from '../utils/gasService';
 import { printElement } from '../utils/printHelper';
+import { computeTrendline, filterValidPoints } from '../utils/mathAnalysis';
 import {
   Award,
   BookOpen,
@@ -51,14 +52,46 @@ interface ResultsEvaluationDashboardProps {
   topics: TopicConfig[];
   allGroupsData: GroupExperimentData[];
   gasWebAppUrl: string;
+  teacherPassword?: string;
   onRefreshData?: () => void;
   isLoading?: boolean;
+}
+
+const GRADE_OPTIONS = ['A+', 'A', 'B', 'C', '재시도(R)'];
+
+/**
+ * The group-shortcut pills only have room for a 1-2 character badge, so the
+ * long "재시도(R)" grade is collapsed to its letter there.
+ */
+function shortGradeBadge(score?: string): string {
+  if (!score) return '✓';
+  if (score.startsWith('재시도')) return 'R';
+  return score;
+}
+
+/**
+ * Timestamps come back from GAS as whatever `String(Date)` produced on the sheet side,
+ * which can be a raw JS date string ("Wed Aug 26 2026 22:20:13 GMT+0900 (한국 표준시)").
+ * Normalize it to a compact Korean timestamp so the header never wraps.
+ */
+function formatSubmittedAt(raw?: string): string {
+  if (!raw) return '기록 없음';
+  const parsed = new Date(raw);
+  if (isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProps> = ({
   topics,
   allGroupsData,
   gasWebAppUrl,
+  teacherPassword,
   onRefreshData,
   isLoading
 }) => {
@@ -281,20 +314,35 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
       evaluatedAt: new Date().toLocaleString('ko-KR')
     };
 
-    const res = await saveEvaluationToGAS(newEval, gasWebAppUrl);
-    setIsSavingEval(false);
-    if (res.success) {
-      setSaveMessage({ type: 'success', text: res.message });
-      setEvaluations((prev) => ({ ...prev, [currentEvalKey]: newEval }));
-    } else {
-      setSaveMessage({ type: 'error', text: res.message || '저장 중 오류가 발생했습니다.' });
+    try {
+      const res = await saveEvaluationToGAS(newEval, gasWebAppUrl, teacherPassword);
+      if (res.success) {
+        setSaveMessage({ type: 'success', text: res.message });
+        setEvaluations((prev) => ({ ...prev, [currentEvalKey]: newEval }));
+      } else {
+        setSaveMessage({ type: 'error', text: res.message || '저장 중 오류가 발생했습니다.' });
+      }
+    } catch (err) {
+      // e.g. localStorage.setItem throwing (quota exceeded / private mode) -
+      // without this catch the save button would stay stuck in "저장 중..." forever.
+      console.warn('Unexpected error while saving evaluation:', err);
+      setSaveMessage({ type: 'error', text: '평가 저장 중 예상치 못한 오류가 발생했습니다. 브라우저 저장 공간을 확인해주세요.' });
+    } finally {
+      setIsSavingEval(false);
     }
   };
 
   // Linear regression calculation for current group
   const regressionResult = useMemo(() => {
     if (!currentGroupData || !currentGroupData.points || currentGroupData.points.length < 2) return null;
-    const validPoints = currentGroupData.points.filter((p) => !p.isOutlier && !isNaN(p.x) && !isNaN(p.y));
+    // p.x/p.y can be '' for a not-yet-filled row. isNaN('') is false (Number('') === 0),
+    // so an explicit type+empty-string check is required - otherwise a blank row is
+    // silently treated as a real (0, 0) measurement and skews the regression.
+    const validPoints = currentGroupData.points.filter((p) =>
+      !p.isOutlier &&
+      typeof p.x === 'number' && !isNaN(p.x) &&
+      typeof p.y === 'number' && !isNaN(p.y)
+    );
     if (validPoints.length < 2) return null;
 
     const n = validPoints.length;
@@ -523,8 +571,8 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               >
                 <span>{grp}</span>
                 {evalItem ? (
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
-                    {evalItem.score || '✓'}
+                  <span className="w-4 h-4 shrink-0 rounded-full bg-emerald-100 text-emerald-800 text-[10px] leading-none flex items-center justify-center font-bold whitespace-nowrap">
+                    {shortGradeBadge(evalItem.score)}
                   </span>
                 ) : hasData ? (
                   <span className="w-2 h-2 rounded-full bg-indigo-500" />
@@ -542,17 +590,17 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
         {/* Left Column (8 cols): Student Submission (Measurements, Graph, Q&A) */}
         <div className="lg:col-span-7 space-y-6">
           {/* Header Summary for Current Group */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm border border-indigo-200">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm border border-indigo-200 whitespace-nowrap">
                   {selectedGrade} {selectedClass} {selectedGroupName}
                 </span>
-                <span className="text-xs text-slate-500">
-                  최종 제출: {currentGroupData?.lastSavedAt || '기록 없음'}
+                <span className="text-xs text-slate-500 whitespace-nowrap">
+                  최종 제출: {formatSubmittedAt(currentGroupData?.lastSavedAt)}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-slate-900 mt-1">
+              <h3 className="text-base font-bold text-slate-900 break-keep">
                 {currentTopic?.title}
               </h3>
             </div>
@@ -560,9 +608,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             <button
               type="button"
               onClick={handlePrintGroupReport}
-              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="shrink-0 self-start px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4 shrink-0" />
               <span>모둠 보고서 인쇄 / PDF</span>
             </button>
           </div>
@@ -618,6 +666,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                       }}
                     />
                     <Tooltip
+                      isAnimationActive={false}
                       cursor={{ strokeDasharray: '3 3' }}
                       content={({ payload }) => {
                         if (!payload || payload.length === 0) return null;
@@ -867,7 +916,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                 <span className="text-[11px] font-bold text-indigo-600">현재: {formScore}</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
-                {['A+', 'A', 'B', 'C', '재시도'].map((grade) => (
+                {GRADE_OPTIONS.map((grade) => (
                   <button
                     key={grade}
                     type="button"
@@ -1206,6 +1255,15 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                   groupData?.conclusionNotes?.principle ||
                   groupData?.conclusionNotes?.answers
                 );
+                // Regression over the group's own recorded points, using the
+                // trendline the students actually selected for their report.
+                const groupTrend =
+                  groupData && filterValidPoints(groupData.points || []).length >= 2
+                    ? computeTrendline(
+                        groupData.selectedTrendline || currentTopic?.defaultTrendline || 'linear',
+                        groupData.points || []
+                      )
+                    : null;
                 const rubricAvg = evalItem?.rubricScores
                   ? (
                       ((evalItem.rubricScores.accuracy || 0) +
@@ -1222,7 +1280,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                     <td className="border border-slate-300 p-2 font-bold">{grp}</td>
                     <td className="border border-slate-300 p-2">{ptCount}건</td>
                     <td className="border border-slate-300 p-2 font-mono">
-                      {ptCount >= 2 ? '산출됨' : '-'}
+                      {groupTrend
+                        ? `${groupTrend.equation} (R²=${groupTrend.r2})`
+                        : '-'}
                     </td>
                     <td className="border border-slate-300 p-2">
                       {hasReport ? '제출 완료' : '미제출'}

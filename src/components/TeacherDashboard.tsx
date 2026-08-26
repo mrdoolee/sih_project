@@ -39,9 +39,12 @@ import {
   QrCode,
   Share2,
   FlaskConical,
-  LayoutGrid
+  LayoutGrid,
+  AlertTriangle
 } from 'lucide-react';
 import { ConfirmModal, ConfirmVariant, ConfirmIconType } from './ConfirmModal';
+import { UserGuideModal } from './UserGuideModal';
+import { CreditFooter } from './CreditFooter';
 import {
   TopicConfig,
   GASConfig,
@@ -68,7 +71,8 @@ import {
   saveAllGroupPasswordsToGAS,
   generateBulkGroupPasswords,
   clearAllGroupPasswords,
-  getFlattenedAllGroupsData
+  getFlattenedAllGroupsData,
+  verifyTeacherPasswordOnGAS
 } from '../utils/gasService';
 import { GroupPasswordPrintModal } from './GroupPasswordPrintModal';
 import { ClassroomShareModal } from './ClassroomShareModal';
@@ -122,7 +126,47 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // 기본 설정 메뉴: 1. GAS연동 ('gas'), 2. 기능제어/환경설정 ('permissions'), 3. 탐구주제/모둠관리 ('topics'), 4. 학생 배부 링크 & QR 생성 ('share')
   // 탐구 결과 확인 메뉴: 5. 전체 모둠 탐구 결과 확인 ('all_groups'), 6. 모둠별 탐구 결과 확인 & 평가 ('evaluations')
   const [activeTab, setActiveTab] = useState<'gas' | 'permissions' | 'topics' | 'share' | 'all_groups' | 'evaluations'>('gas');
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [topicsSubTab, setTopicsSubTab] = useState<'topicsList' | 'passwords'>('topicsList');
+
+  // Local edits that exist only in this browser until the teacher runs the
+  // matching [시트로 내보내기]. Tracked per data set so the banner and the
+  // leave-tab guard can name exactly which export is still outstanding.
+  const [pendingExport, setPendingExport] = useState<{
+    settings: boolean;
+    topics: boolean;
+    passwords: boolean;
+  }>({ settings: false, topics: false, passwords: false });
+
+  const markPending = (kind: 'settings' | 'topics' | 'passwords') =>
+    setPendingExport((prev) => ({ ...prev, [kind]: true }));
+
+  const clearPending = (kind: 'settings' | 'topics' | 'passwords') =>
+    setPendingExport((prev) => ({ ...prev, [kind]: false }));
+
+  // Which unsaved data sets belong to a given tab.
+  const pendingKindsForTab = (tab: string): Array<'settings' | 'topics' | 'passwords'> => {
+    if (tab === 'permissions') return pendingExport.settings ? ['settings'] : [];
+    if (tab === 'topics') {
+      const kinds: Array<'settings' | 'topics' | 'passwords'> = [];
+      if (pendingExport.topics) kinds.push('topics');
+      if (pendingExport.passwords) kinds.push('passwords');
+      return kinds;
+    }
+    return [];
+  };
+
+  const PENDING_LABELS: Record<'settings' | 'topics' | 'passwords', string> = {
+    settings: '환경설정',
+    topics: '탐구 주제 목록',
+    passwords: '모둠 비밀번호'
+  };
+
+  const PENDING_EXPORT_BUTTONS: Record<'settings' | 'topics' | 'passwords', string> = {
+    settings: '시트로 내보내기',
+    topics: '주제 내보내기',
+    passwords: '비번 내보내기'
+  };
   const [webAppUrl, setWebAppUrl] = useState(gasConfig.webAppUrl);
   const [copiedCode, setCopiedCode] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
@@ -153,17 +197,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const gasCode = getGASCodeTemplate();
 
-  const handleLogin = (e?: React.FormEvent) => {
+  const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+
+  const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const correctPassword = teacherSettings.teacherPassword || '0000';
-    if (enteredPassword.trim() === correctPassword.trim()) {
+    const inputPw = enteredPassword.trim();
+    const correctPassword = (teacherSettings.teacherPassword || '0000').trim();
+
+    if (inputPw === correctPassword) {
       setIsUnlocked(true);
       sessionStorage.setItem('science_lab_teacher_auth', 'true');
       setLoginError(null);
       setEnteredPassword('');
-    } else {
-      setLoginError('비밀번호가 일치하지 않습니다. (초기 기본값: 0000)');
+      return;
     }
+
+    // Local cache may be stale (e.g. first login on a new device/browser
+    // after the teacher changed the password elsewhere). Confirm against
+    // the spreadsheet before rejecting, and repair the local cache on success.
+    if (gasConfig.webAppUrl) {
+      setIsVerifyingLogin(true);
+      const valid = await verifyTeacherPasswordOnGAS(inputPw, gasConfig.webAppUrl);
+      setIsVerifyingLogin(false);
+      if (valid) {
+        onSaveTeacherSettings({ ...teacherSettings, teacherPassword: inputPw });
+        setIsUnlocked(true);
+        sessionStorage.setItem('science_lab_teacher_auth', 'true');
+        setLoginError(null);
+        setEnteredPassword('');
+        return;
+      }
+    }
+
+    setLoginError('비밀번호가 일치하지 않습니다. (초기 기본값: 0000)');
   };
 
   const handleLogout = () => {
@@ -187,6 +253,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const fetched = await fetchTeacherSettingsFromGAS(gasConfig.webAppUrl);
       if (fetched) {
         onSaveTeacherSettings(fetched);
+        clearPending('settings');
         setSyncFeedback({
           type: 'success',
           message: '구글 스프레드시트 [환경설정] 탭에서 최신 설정(비밀번호, 권한)을 성공적으로 불러왔습니다!'
@@ -268,8 +335,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingSettings(true);
     try {
-      const ok = await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl);
-      if (ok) {
+      const ok = await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      if (ok.success) {
+        clearPending('settings');
         setSyncFeedback({
           type: 'success',
           message: '현재 환경설정이 구글 스프레드시트 [환경설정] 탭에 성공적으로 동기화되었습니다.'
@@ -325,6 +393,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setCurrentPwInput('');
     setNewPwInput('');
     setConfirmPwInput('');
+    markPending('settings');
     setPwChangeStatus({
       type: 'success',
       message: '교사 비밀번호가 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
@@ -402,6 +471,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setConfirmModal((prev) => ({ ...prev, isOpen: false }));
   };
 
+  // Tab navigation that warns before abandoning changes which still need to be
+  // pushed to the spreadsheet. Local state survives the move, so the teacher may
+  // continue anyway - the banner on the tab keeps reminding them.
+  const requestTabChange = (
+    nextTab: 'gas' | 'permissions' | 'topics' | 'share' | 'all_groups' | 'evaluations'
+  ) => {
+    if (nextTab === activeTab) return;
+
+    const pendingKinds = pendingKindsForTab(activeTab);
+    if (pendingKinds.length === 0) {
+      setActiveTab(nextTab);
+      return;
+    }
+
+    const names = pendingKinds.map((k) => PENDING_LABELS[k]).join(', ');
+    const buttons = pendingKinds.map((k) => `[${PENDING_EXPORT_BUTTONS[k]}]`).join(', ');
+
+    openConfirm({
+      title: '아직 시트로 내보내지 않은 변경사항이 있습니다',
+      description: `${names} 변경 내용이 이 브라우저에만 저장되어 있습니다. 상단의 ${buttons} 버튼을 눌러 구글 스프레드시트에 반영하세요.`,
+      subWarning:
+        '내보내지 않아도 변경 내용은 이 브라우저에 남아 있지만, 다른 기기나 스프레드시트에는 반영되지 않습니다.',
+      confirmText: '내보내지 않고 이동',
+      cancelText: '남아서 내보내기',
+      variant: 'warning',
+      icon: 'alert',
+      onConfirm: () => {
+        closeConfirm();
+        setActiveTab(nextTab);
+      }
+    });
+  };
+
   // Master: Request Push All to Spreadsheet (with confirmation)
   const handleRequestPushAllMaster = () => {
     if (!gasConfig.webAppUrl) {
@@ -473,7 +575,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         onSaveTopics(fetchedTopics);
         successCount++;
       }
-      const fetchedPasswords = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl);
+      const fetchedPasswords = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, teacherSettings.teacherPassword);
       if (fetchedPasswords) {
         setPasswordsState(fetchedPasswords);
         saveStoredGroupPasswords(fetchedPasswords);
@@ -483,6 +585,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         await onSyncFromGAS();
       }
 
+      clearPending('settings'); clearPending('topics'); clearPending('passwords');
       setMasterSyncFeedback({
         type: 'success',
         message: `스프레드시트에서 모든 설정 및 데이터를 성공적으로 불러왔습니다! (${successCount}개 항목 동기화)`
@@ -510,10 +613,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingMaster(true);
     try {
-      await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl);
-      await saveTopicsToGAS(topics, gasConfig.webAppUrl);
-      await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl);
+      await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      await saveTopicsToGAS(topics, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, teacherSettings.teacherPassword);
 
+      clearPending('settings'); clearPending('topics'); clearPending('passwords');
       setMasterSyncFeedback({
         type: 'success',
         message: '현재 웹의 모든 설정(환경설정, 주제목록, 모둠비밀번호)을 스프레드시트에 성공적으로 내보냈습니다!'
@@ -535,6 +639,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       allowClassOverview: !teacherSettings.allowClassOverview
     };
     onSaveTeacherSettings(updated);
+    markPending('settings');
     setSyncFeedback({
       type: 'success',
       message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
@@ -548,6 +653,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       allowAutoAnalysis: !teacherSettings.allowAutoAnalysis
     };
     onSaveTeacherSettings(updated);
+    markPending('settings');
     setSyncFeedback({
       type: 'success',
       message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
@@ -561,6 +667,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       requireGroupPassword: !teacherSettings.requireGroupPassword
     };
     onSaveTeacherSettings(updated);
+    markPending('settings');
     setSyncFeedback({
       type: 'success',
       message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
@@ -575,6 +682,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
     const updatedStore = generateBulkGroupPasswords(targetTopic, 'random');
     setPasswordsState({ ...updatedStore });
+    markPending('passwords');
 
     setPasswordFeedback({
       type: 'success',
@@ -590,6 +698,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
     const updatedStore = generateBulkGroupPasswords(targetTopic, 'sequential');
     setPasswordsState({ ...updatedStore });
+    markPending('passwords');
 
     setPasswordFeedback({
       type: 'success',
@@ -610,8 +719,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingPasswords(true);
     try {
-      const res = await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl);
+      const res = await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, teacherSettings.teacherPassword);
       if (res.success) {
+        clearPending('passwords');
         setPasswordFeedback({
           type: 'success',
           message: '현재 모둠 비밀번호 목록 전체가 구글 스프레드시트 [환경설정_모둠비밀번호] 시트에 성공적으로 동기화되었습니다!'
@@ -653,6 +763,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const handleClearAllPasswords = () => {
     clearAllGroupPasswords();
     setPasswordsState({});
+    markPending('passwords');
     setPasswordFeedback({
       type: 'success',
       message: '모든 모둠 비밀번호가 로컬에서 초기화되었습니다. 스프레드시트에 반영하려면 [시트로 전체 내보내기] 버튼을 누르세요.'
@@ -699,6 +810,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const fetched = await fetchTopicsFromGAS(gasConfig.webAppUrl);
       if (fetched && fetched.length > 0) {
         onSaveTopics(fetched);
+        clearPending('topics');
         setTopicSyncFeedback({
           type: 'success',
           message: `구글 스프레드시트 [환경설정_주제목록] 탭에서 총 ${fetched.length}개의 탐구 주제를 성공적으로 불러왔습니다!`
@@ -756,8 +868,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingTopics(true);
     try {
-      const result = await saveTopicsToGAS(topics, gasConfig.webAppUrl);
+      const result = await saveTopicsToGAS(topics, gasConfig.webAppUrl, teacherSettings.teacherPassword);
       if (result.success) {
+        clearPending('topics');
         setTopicSyncFeedback({
           type: 'success',
           message: `현재 웹의 탐구 주제 목록(${topics.length}개)이 구글 스프레드시트 [환경설정_주제목록] 탭에 성공적으로 동기화되었습니다!`
@@ -815,9 +928,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingPasswords(true);
     try {
-      const fetched = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl);
+      const fetched = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, teacherSettings.teacherPassword);
       if (fetched) {
         setPasswordsState(fetched);
+        clearPending('passwords');
         setPasswordFeedback({
           type: 'success',
           message: `구글 스프레드시트 [환경설정_모둠비밀번호] 탭에서 총 ${Object.keys(fetched).length}개 모둠의 비밀번호를 성공적으로 동기화했습니다!`
@@ -864,8 +978,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleResetGroupPw = (topicId: string, grade: string, classNum: string, groupName: string) => {
-    resetGroupPassword(topicId, grade, classNum, groupName);
+    resetGroupPassword(topicId, grade, classNum, groupName, gasConfig.webAppUrl, teacherSettings.teacherPassword);
     setPasswordsState(getAllGroupPasswords());
+    markPending('passwords');
     setPasswordFeedback({
       type: 'success',
       message: `${grade} ${classNum} ${groupName}의 비밀번호가 로컬에서 초기화되었습니다. 시트에 반영하려면 [시트로 전체 내보내기]를 누르세요.`
@@ -882,8 +997,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setTimeout(() => setPasswordFeedback(null), 3000);
       return;
     }
-    setGroupPassword(topicId, grade, classNum, groupName, newPw.trim());
+    setGroupPassword(topicId, grade, classNum, groupName, newPw.trim(), gasConfig.webAppUrl, teacherSettings.teacherPassword);
     setPasswordsState(getAllGroupPasswords());
+    markPending('passwords');
     setEditingGroupPw(null);
     setPasswordFeedback({
       type: 'success',
@@ -912,6 +1028,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     if (topics.length <= 1) return;
     const updated = topics.filter((t) => t.topicId !== topicId);
     onSaveTopics(updated);
+    markPending('topics');
     setTopicSyncFeedback({
       type: 'success',
       message: '주제가 로컬에서 삭제되었습니다. 스프레드시트에 반영하려면 [시트로 내보내기] 버튼을 누르세요.'
@@ -920,8 +1037,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleStartAdd = () => {
-    const nextNum = topics.length + 1;
-    const newId = `EXP_${String(nextNum).padStart(2, '0')}`;
+    // Base the new id on the highest existing numeric suffix, not on the
+    // array length - otherwise deleting a topic and adding a new one can
+    // regenerate an id that collides with a topic that's still in the list.
+    const existingIds = new Set(topics.map((t) => t.topicId));
+    let maxNum = 0;
+    topics.forEach((t) => {
+      const match = /^EXP_(\d+)$/.exec(t.topicId);
+      if (match) {
+        maxNum = Math.max(maxNum, parseInt(match[1], 10));
+      }
+    });
+    let nextNum = maxNum + 1;
+    let newId = `EXP_${String(nextNum).padStart(2, '0')}`;
+    while (existingIds.has(newId)) {
+      nextNum++;
+      newId = `EXP_${String(nextNum).padStart(2, '0')}`;
+    }
     const baseTopic = {
       topicId: newId,
       title: '새로운 과학 탐구 실험',
@@ -957,6 +1089,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       updatedList = topics.map((t) => (t.topicId === editingTopic.topicId ? editingTopic : t));
     }
     onSaveTopics(updatedList);
+    markPending('topics');
     setTopicSyncFeedback({
       type: 'success',
       message: `주제 [${editingTopic.title}]가 로컬에 저장되었습니다. 스프레드시트 [환경설정_주제목록] 시트에도 반영하려면 [시트로 내보내기] 버튼을 누르세요.`
@@ -967,6 +1100,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleGoToStudent = () => {
+    // Leaving the console entirely is the same risk as leaving the tab.
+    const stillPending = (['settings', 'topics', 'passwords'] as const).filter((k) => pendingExport[k]);
+    if (stillPending.length > 0) {
+      openConfirm({
+        title: '아직 시트로 내보내지 않은 변경사항이 있습니다',
+        description: `${stillPending
+          .map((k) => PENDING_LABELS[k])
+          .join(', ')} 변경 내용이 이 브라우저에만 저장되어 있습니다. 학생 화면으로 이동하기 전에 각 탭의 ${stillPending
+          .map((k) => `[${PENDING_EXPORT_BUTTONS[k]}]`)
+          .join(', ')} 버튼을 눌러 스프레드시트에 반영하세요.`,
+        subWarning: '내보내지 않으면 다른 기기나 스프레드시트에는 반영되지 않습니다.',
+        confirmText: '내보내지 않고 이동',
+        cancelText: '남아서 내보내기',
+        variant: 'warning',
+        icon: 'alert',
+        onConfirm: () => {
+          closeConfirm();
+          setPendingExport({ settings: false, topics: false, passwords: false });
+          doGoToStudent();
+        }
+      });
+      return;
+    }
+    doGoToStudent();
+  };
+
+  const doGoToStudent = () => {
     if (onBackToStudent) {
       onBackToStudent();
     } else if (
@@ -1135,7 +1295,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <button
               type="button"
               id="tab-gas"
-              onClick={() => setActiveTab('gas')}
+              onClick={() => requestTabChange('gas')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
                 activeTab === 'gas'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
@@ -1158,7 +1318,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               type="button"
               id="tab-permissions"
               disabled={!isGasConnected}
-              onClick={() => setActiveTab('permissions')}
+              onClick={() => requestTabChange('permissions')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
                 !isGasConnected
                   ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
@@ -1174,7 +1334,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="flex-1 min-w-0">
                 <div className="truncate font-bold flex items-center justify-between">
                   <span>2. 기능제어 / 환경설정</span>
-                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                  <span className="flex items-center gap-1 shrink-0">
+                    {pendingExport.settings && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="시트로 내보내지 않은 변경사항 있음" />
+                    )}
+                    {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                  </span>
                 </div>
                 <div className={`text-[10px] font-normal truncate ${activeTab === 'permissions' ? 'text-indigo-200' : 'text-slate-400'}`}>
                   학생 기능 On/Off & 비밀번호
@@ -1187,7 +1352,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               type="button"
               id="tab-topics"
               disabled={!isGasConnected}
-              onClick={() => setActiveTab('topics')}
+              onClick={() => requestTabChange('topics')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
                 !isGasConnected
                   ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
@@ -1203,7 +1368,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="flex-1 min-w-0">
                 <div className="truncate font-bold flex items-center justify-between">
                   <span>3. 탐구주제 / 모둠관리</span>
-                  {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                  <span className="flex items-center gap-1 shrink-0">
+                    {(pendingExport.topics || pendingExport.passwords) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="시트로 내보내지 않은 변경사항 있음" />
+                    )}
+                    {!isGasConnected && <Lock className="w-3 h-3 text-slate-500" />}
+                  </span>
                 </div>
                 <div className={`text-[10px] font-normal truncate ${activeTab === 'topics' ? 'text-indigo-200' : 'text-slate-400'}`}>
                   주제 설정 & 모둠 비밀번호
@@ -1216,7 +1386,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               type="button"
               id="tab-share"
               disabled={!isGasConnected}
-              onClick={() => setActiveTab('share')}
+              onClick={() => requestTabChange('share')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
                 !isGasConnected
                   ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
@@ -1255,7 +1425,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               type="button"
               id="tab-all-groups"
               disabled={!isGasConnected}
-              onClick={() => setActiveTab('all_groups')}
+              onClick={() => requestTabChange('all_groups')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
                 !isGasConnected
                   ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
@@ -1284,7 +1454,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               type="button"
               id="tab-evaluations"
               disabled={!isGasConnected}
-              onClick={() => setActiveTab('evaluations')}
+              onClick={() => requestTabChange('evaluations')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
                 !isGasConnected
                   ? 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-900/50'
@@ -1311,16 +1481,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
 
         {/* Sidebar Bottom Action Buttons */}
-        <div className="p-3 border-t border-slate-800 space-y-2 bg-slate-950/60">
-          <button
-            type="button"
-            id="btn-sidebar-to-student"
-            onClick={handleGoToStudent}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 shadow-xs transition-all cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>학생 화면으로 이동</span>
-          </button>
+        <div>
+          <div className="p-3 border-t border-slate-800 space-y-2 bg-slate-950/60">
+            <button
+              type="button"
+              id="btn-sidebar-to-student"
+              onClick={handleGoToStudent}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 shadow-xs transition-all cursor-pointer"
+            >
+              <span>학생 화면으로 이동</span>
+            </button>
+            <button
+              type="button"
+              id="btn-sidebar-guide"
+              onClick={() => setIsGuideOpen(true)}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white shadow-xs transition-all cursor-pointer"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>사용 가이드</span>
+            </button>
+          </div>
+          <CreditFooter variant="dark" />
         </div>
       </aside>
 
@@ -1349,6 +1530,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           {/* Sticky Header Action Buttons (Contextual Sync/Save Buttons) */}
           <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            {/* Persistent unsaved-changes marker. Unlike the toast feedback this
+                stays put until the matching export actually succeeds. */}
+            {pendingKindsForTab(activeTab).length > 0 && (
+              <span
+                id="badge-pending-export"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-amber-900 bg-amber-100 border border-amber-300 whitespace-nowrap"
+                title="변경 내용이 이 브라우저에만 저장되어 있습니다. 내보내기 버튼을 눌러 스프레드시트에 반영하세요."
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  저장 필요:{' '}
+                  {pendingKindsForTab(activeTab)
+                    .map((k) => PENDING_LABELS[k])
+                    .join(' · ')}
+                </span>
+              </span>
+            )}
+
             {/* Tab 1: GAS - Master Sync Buttons */}
             {activeTab === 'gas' && (
               <div className="flex items-center gap-1.5">
@@ -1436,14 +1635,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                       title="스프레드시트 [환경설정_모둠비밀번호] 탭에서 비밀번호를 불러옵니다."
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPasswords ? 'animate-spin text-amber-600' : ''}`} />
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPasswords ? 'animate-spin text-indigo-600' : ''}`} />
                       <span>비번 불러오기</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleRequestPushPasswords}
                       disabled={isSyncingPasswords || !gasConfig.webAppUrl}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                       title="현재 비밀번호 목록을 스프레드시트 [환경설정_모둠비밀번호] 탭으로 내보냅니다."
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -2619,7 +2818,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           type="button"
                           onClick={() => {
                             setPwFilterTopic(t.topicId);
-                            setActiveTab('passwords');
+                            setTopicsSubTab('passwords');
                           }}
                           className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                           title="이 주제의 모둠별 비밀번호 설정 및 인쇄"
@@ -2982,6 +3181,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             topics={topics}
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}
+            teacherPassword={teacherSettings.teacherPassword}
             onRefreshData={onSyncFromGAS}
             isLoading={isSyncing}
           />
@@ -3086,6 +3286,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           variant={confirmModal.variant}
           icon={confirmModal.icon}
         />
+
+        {/* User Guide Modal */}
+        <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
       </main>
     </div>
   );

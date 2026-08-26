@@ -23,6 +23,7 @@ import {
   setGroupPassword,
   getGroupPasswordKey
 } from '../utils/gasService';
+import { CreditFooter } from './CreditFooter';
 
 interface IndexSelectionScreenProps {
   topics: TopicConfig[];
@@ -74,8 +75,11 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
     return currentTopic?.groups?.[0] || 'A모둠';
   });
 
-  // Keep grade/class/group valid when topic changes
+  // Keep topicId/grade/class/group valid when topic changes
   useEffect(() => {
+    if (!topics.some((t) => t.topicId === topicId)) {
+      setTopicId(currentTopic.topicId);
+    }
     if (!currentTopic.grades.includes(grade)) {
       setGrade(currentTopic.grades[0] || '1학년');
     }
@@ -85,7 +89,7 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
     if (!currentTopic.groups.includes(groupName)) {
       setGroupName(currentTopic.groups[0] || 'A모둠');
     }
-  }, [currentTopic, grade, classNum, groupName]);
+  }, [topics, topicId, currentTopic, grade, classNum, groupName]);
 
   // Password inputs
   const [passwordInput, setPasswordInput] = useState('');
@@ -173,7 +177,7 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-white tracking-tight">
-              과학 탐구 보고서 & 데이터 도우미
+              과학 탐구 활동 보고서 작성 도우미
             </h1>
           </div>
         </div>
@@ -420,6 +424,7 @@ export const IndexSelectionScreen: React.FC<IndexSelectionScreenProps> = ({
       <div className="max-w-4xl mx-auto w-full text-center text-xs text-slate-500">
         <p>과학 탐구 데이터 수집 및 실시간 분석 시스템 · 구글 스프레드시트 GAS 연동 지원</p>
       </div>
+      <CreditFooter variant="dark" singleLine />
     </div>
   );
 };

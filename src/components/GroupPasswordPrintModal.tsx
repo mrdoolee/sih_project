@@ -12,6 +12,9 @@ import { TopicConfig } from '../types';
 import { getGroupPasswordKey } from '../utils/gasService';
 import { printElement, openPrintWindow } from '../utils/printHelper';
 
+// A4 portrait fits a 2-column x 6-row grid of cut-out cards per sheet.
+const CARDS_PER_PAGE = 12;
+
 interface GroupPasswordPrintModalProps {
   isOpen?: boolean;
   topics: TopicConfig[];
@@ -88,6 +91,13 @@ export const GroupPasswordPrintModal: React.FC<GroupPasswordPrintModalProps> = (
     });
   }
 
+  // Split the cut-out cards into fixed-size sheets so a card never straddles a
+  // page boundary and gets sliced in half by the printer.
+  const cardPages: (typeof items)[] = [];
+  for (let i = 0; i < items.length; i += CARDS_PER_PAGE) {
+    cardPages.push(items.slice(i, i + CARDS_PER_PAGE));
+  }
+
   const handlePrint = async () => {
     if (isPrinting) return;
     setIsPrinting(true);
@@ -143,6 +153,12 @@ export const GroupPasswordPrintModal: React.FC<GroupPasswordPrintModalProps> = (
           }
           .page-break {
             page-break-after: always;
+            break-after: page;
+          }
+          /* A single cut-out ticket must never be sliced across two sheets. */
+          .password-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
         }
       `}</style>
@@ -322,11 +338,18 @@ export const GroupPasswordPrintModal: React.FC<GroupPasswordPrintModalProps> = (
 
             {/* Cards View (Cut-out Cards for students) */}
             {viewMode === 'cards' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {items.map((item) => (
+              <div className="space-y-3.5">
+                {cardPages.map((pageItems, pageIdx) => (
+                  <div
+                    key={`pwpage-${pageIdx}`}
+                    className={`grid grid-cols-1 sm:grid-cols-2 gap-3.5 ${
+                      pageIdx < cardPages.length - 1 ? 'page-break' : ''
+                    }`}
+                  >
+                {pageItems.map((item) => (
                   <div
                     key={item.key}
-                    className="p-4 rounded-xl border-2 border-dashed border-slate-300 bg-white relative hover:border-slate-400 transition-colors flex flex-col justify-between"
+                    className="password-card p-4 rounded-xl border-2 border-dashed border-slate-300 bg-white relative hover:border-slate-400 transition-colors flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
@@ -364,6 +387,8 @@ export const GroupPasswordPrintModal: React.FC<GroupPasswordPrintModalProps> = (
                       <span>* 실험실 접속 후 위 모둠명과 비밀번호를 입력하세요.</span>
                       <span className="font-mono text-slate-400">✂️ 자르는 선</span>
                     </div>
+                  </div>
+                ))}
                   </div>
                 ))}
               </div>
