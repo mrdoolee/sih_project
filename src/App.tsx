@@ -26,7 +26,6 @@ import {
   fetchTeacherSettingsFromGAS
 } from './utils/gasService';
 import { parseDistributionParams } from './utils/distributionHelper';
-import { SAMPLE_DATA_TOPIC_IDS } from './data/defaultTopics';
 import { computeTrendline } from './utils/mathAnalysis';
 import { Header } from './components/Header';
 import { DataTable } from './components/DataTable';
@@ -356,69 +355,6 @@ export default function App() {
     showToast('전체 모둠 최신 데이터를 불러왔습니다.');
   };
 
-  // Load sample values for active topic
-  const handleLoadSample = () => {
-    if (selectedTopicId === 'EXP_01') {
-      setPoints([
-        { id: '1', order: 1, x: 0.5, y: 1.25, isOutlier: false, note: '추 1개' },
-        { id: '2', order: 2, x: 1.0, y: 2.45, isOutlier: false, note: '추 2개' },
-        { id: '3', order: 3, x: 1.5, y: 3.70, isOutlier: false, note: '추 3개' },
-        { id: '4', order: 4, x: 2.0, y: 4.95, isOutlier: false, note: '추 4개' },
-        { id: '5', order: 5, x: 2.5, y: 6.20, isOutlier: false, note: '추 5개' }
-      ]);
-      setSelectedTrendline('proportional');
-      setConclusionNotes({
-        summary: '추의 무게가 0.5N씩 늘어날 때마다 늘어난 길이가 약 1.23cm씩 비례하여 늘어남.',
-        principle: '작용한 외력(중력)과 용수철 탄성력의 크기가 정비례하는 훅의 법칙 확인.',
-        errorAnalysis: '눈금을 수평 각도로 정밀하게 관측함.'
-      });
-    } else if (selectedTopicId === 'EXP_02') {
-      setPoints([
-        { id: '1', order: 1, x: 100, y: 60.0, isOutlier: false, note: '대기압' },
-        { id: '2', order: 2, x: 120, y: 50.2, isOutlier: false },
-        { id: '3', order: 3, x: 150, y: 40.1, isOutlier: false },
-        { id: '4', order: 4, x: 200, y: 30.0, isOutlier: false },
-        { id: '5', order: 5, x: 240, y: 24.8, isOutlier: false }
-      ]);
-      setSelectedTrendline('inverse');
-      setConclusionNotes({
-        summary: '기체 압력이 2배(100->200)가 될 때 부피는 절반(60->30)으로 줄어듦.',
-        principle: '온도가 일정할 때 일정량의 기체의 부피는 압력에 반비례함 (P·V = k).',
-        errorAnalysis: '주사기 피스톤의 마찰로 인한 미세 오차 고려.'
-      });
-    } else if (selectedTopicId === 'EXP_03') {
-      setPoints([
-        { id: '1', order: 1, x: 1.0, y: 50, isOutlier: false },
-        { id: '2', order: 2, x: 2.0, y: 102, isOutlier: false },
-        { id: '3', order: 3, x: 3.0, y: 151, isOutlier: false },
-        { id: '4', order: 4, x: 4.0, y: 198, isOutlier: false },
-        { id: '5', order: 5, x: 5.0, y: 250, isOutlier: false }
-      ]);
-      setSelectedTrendline('linear');
-      setConclusionNotes({
-        summary: '전압(V)을 높일수록 전류(mA)가 일정 비율로 증가함.',
-        principle: '도선에 흐르는 전류는 전압에 정비례함 (옴의 법칙 V=IR).',
-        errorAnalysis: '도선의 온도 상승으로 인한 저항 변화 확인 필요.'
-      });
-    } else {
-      setPoints([
-        { id: '1', order: 1, x: 10, y: 12, isOutlier: false },
-        { id: '2', order: 2, x: 25, y: 28, isOutlier: false },
-        { id: '3', order: 3, x: 37, y: 45, isOutlier: false, note: '최적 온도 부근' },
-        { id: '4', order: 4, x: 50, y: 18, isOutlier: false, note: '효소 변성 시작' },
-        { id: '5', order: 5, x: 65, y: 3, isOutlier: false, note: '거의 반응 없음' }
-      ]);
-      setSelectedTrendline('quadratic');
-      setConclusionNotes({
-        summary: '체온 부근(약 37°C)에서 산소 발생량이 최대이며, 50°C 이상에서는 급감함.',
-        principle: '효소는 단백질로 이루어져 있어 고온에서 입체 구조가 변성되어 활성을 잃음.',
-        errorAnalysis: '항온 수조의 온도 유지 정밀도.'
-      });
-    }
-    setHasUnsavedChanges(true);
-    showToast('예시 실험 데이터를 불러왔습니다.');
-  };
-
   // Reset active group data
   const handleResetData = () => {
     setPoints([
@@ -681,8 +617,6 @@ export default function App() {
                 setPoints(newPts);
                 setHasUnsavedChanges(true);
               }}
-              onLoadSample={handleLoadSample}
-              canLoadSample={SAMPLE_DATA_TOPIC_IDS.includes(selectedTopicId)}
             />
           </div>
 

@@ -14,6 +14,10 @@ import {
 } from './utils/gasService';
 import { GASConfig, TopicConfig, TeacherSettingsConfig } from './types';
 
+// See main.tsx for why this is needed - avoids the iOS Safari "first tap only
+// triggers :hover" quirk on hover-styled buttons for teachers on tablet/phone.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 const TeacherStandaloneApp: React.FC = () => {
   const [gasConfig, setGasConfig] = useState<GASConfig>(getStoredGASConfig());
   const [topics, setTopics] = useState<TopicConfig[]>(getStoredTopics());

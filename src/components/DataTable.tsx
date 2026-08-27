@@ -3,7 +3,6 @@ import {
   Plus,
   Trash2,
   ArrowUpDown,
-  Sparkles,
   AlertCircle,
   HelpCircle,
   CheckCircle2
@@ -15,18 +14,13 @@ interface DataTableProps {
   groupName: string;
   points: DataPoint[];
   onChangePoints: (points: DataPoint[]) => void;
-  onLoadSample: () => void;
-  /** Teacher-created topics ship no demo measurements, so the button is disabled there. */
-  canLoadSample?: boolean;
 }
 
 export const DataTable: React.FC<DataTableProps> = ({
   topic,
   groupName,
   points,
-  onChangePoints,
-  onLoadSample,
-  canLoadSample = true
+  onChangePoints
 }) => {
   const handleAddRow = () => {
     const nextOrder = points.length > 0 ? Math.max(...points.map((p) => p.order)) + 1 : 1;
@@ -115,26 +109,6 @@ export const DataTable: React.FC<DataTableProps> = ({
 
           <button
             type="button"
-            id="btn-load-sample"
-            onClick={onLoadSample}
-            disabled={!canLoadSample}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium border rounded-md transition-colors ${
-              canLoadSample
-                ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
-                : 'text-slate-400 bg-slate-100 border-slate-200 cursor-not-allowed'
-            }`}
-            title={
-              canLoadSample
-                ? '예시 실험 데이터를 불러옵니다'
-                : '선생님이 새로 만든 탐구 주제에는 준비된 예시 데이터가 없습니다'
-            }
-          >
-            <Sparkles className={`w-3.5 h-3.5 ${canLoadSample ? 'text-amber-600' : 'text-slate-400'}`} />
-            <span>예시값</span>
-          </button>
-
-          <button
-            type="button"
             id="btn-add-row"
             onClick={handleAddRow}
             className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-2xs"
@@ -199,9 +173,7 @@ export const DataTable: React.FC<DataTableProps> = ({
                   <AlertCircle className="w-7 h-7 mx-auto mb-2 text-slate-300" />
                   <p className="font-medium text-slate-600">측정 데이터가 없습니다.</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    상단의 <strong>[+ 행 추가]</strong>
-                    {canLoadSample && <> 또는 <strong>[예시값]</strong></>}
-                    을 클릭하여 데이터를 입력하세요.
+                    상단의 <strong>[+ 행 추가]</strong>을 클릭하여 데이터를 입력하세요.
                   </p>
                 </td>
               </tr>
