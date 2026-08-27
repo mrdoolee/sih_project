@@ -24,6 +24,9 @@ interface ManualGraphCanvasProps {
   onChangeManualGraphData?: (data: StudentManualGraphData) => void;
   allowAutoAnalysis?: boolean;
   onSwitchToAuto?: () => void;
+  // Which repeated trial (1차, 2차...) is loaded - included so switching trials
+  // for the same group/topic re-syncs the canvas the same way switching groups does.
+  trialIndex?: number;
 }
 
 type DrawTool = 'plot' | 'line' | 'quadratic' | 'freehand';
@@ -91,7 +94,8 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
   manualGraphData,
   onChangeManualGraphData,
   allowAutoAnalysis = true,
-  onSwitchToAuto
+  onSwitchToAuto,
+  trialIndex
 }) => {
   const validPoints = useMemo(() => filterValidPoints(points), [points]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,7 +168,7 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     // since we just restored real saved line/curve positions for this group and it
     // would otherwise immediately stomp them back to computed defaults.
     skipNextBoundsResetRef.current = hasRestoredPositions;
-  }, [groupName, topic.topicId]);
+  }, [groupName, topic.topicId, trialIndex]);
 
   // Toggles for hints & auto comparison
   const [showTargetHint, setShowTargetHint] = useState(false);
@@ -292,6 +296,9 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     // table row (which changes bounds) must not snap it back to the default.
     if (hasAdjustedRuler) return;
 
+    // This is giving a blank canvas its default ruler/curve position, not a
+    // student edit. The parent-sync effect below independently guards against
+    // reporting this as a change by comparing against what was actually loaded.
     setLinePoint1({ x: 0, y: 0 });
     setLinePoint2({ x: bounds.maxX * 0.75, y: bounds.maxY * 0.75 });
 
@@ -383,26 +390,48 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
 
   // Sync to parent component (App / ChartPanel) whenever student drawing state updates
   useEffect(() => {
-    if (onChangeManualGraphData) {
-      const hasDrawn = studentPoints.length > 0 || freehandPaths.length > 0 || (hasAdjustedRuler && (toolMode === 'line' || toolMode === 'quadratic'));
-      onChangeManualGraphData({
-        studentPoints,
-        toolMode,
-        lineOriginFixed,
-        linePoint1,
-        linePoint2,
-        curveP1,
-        curveP2,
-        curveP3,
-        freehandPaths,
-        studentLineEquation,
-        studentQuadraticCurve,
-        matchStatus,
-        hasDrawn,
-        hasAdjustedRuler,
-        hasPlotted: studentPoints.length > 0
-      });
+    if (!onChangeManualGraphData) return;
+
+    const hasDrawn = studentPoints.length > 0 || freehandPaths.length > 0 || (hasAdjustedRuler && (toolMode === 'line' || toolMode === 'quadratic'));
+    const hasPlotted = studentPoints.length > 0;
+
+    // Mount, every group/topic/trial switch, and the bounds-based default-
+    // position effect (both directly and via dev-mode StrictMode replays of
+    // either) all funnel through this same effect, none of them a real student
+    // edit - reproducing this live, no single "skip the next N fires" flag or
+    // timer held up across every combination of those triggers. A value-based
+    // check does: if nothing is actually drawn/plotted/adjusted right now, and
+    // the loaded record (if any) also had nothing worth reporting, this fire
+    // can only be default-position settling, not an edit - skip it regardless
+    // of which effect or how many replay passes produced it.
+    const loadedHasContent = !!manualGraphData?.hasDrawn || !!manualGraphData?.hasPlotted;
+    if (!hasDrawn && !hasPlotted && !loadedHasContent) {
+      return;
     }
+
+    onChangeManualGraphData({
+      studentPoints,
+      toolMode,
+      lineOriginFixed,
+      linePoint1,
+      linePoint2,
+      curveP1,
+      curveP2,
+      curveP3,
+      freehandPaths,
+      studentLineEquation,
+      studentQuadraticCurve,
+      matchStatus,
+      hasDrawn,
+      hasAdjustedRuler,
+      hasPlotted
+    });
+    // Deliberately NOT depending on studentLineEquation/studentQuadraticCurve/
+    // matchStatus even though they're read above: they're derived values that
+    // get a new object reference whenever dataToScreen/isPointMatched do (e.g.
+    // the ResizeObserver's first real measurement changing `dimensions`), with
+    // no actual student edit behind that reference change. Only the fields a
+    // student can actually edit belong in this list.
   }, [
     studentPoints,
     toolMode,
@@ -413,11 +442,15 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
     curveP2,
     curveP3,
     freehandPaths,
-    studentLineEquation,
-    studentQuadraticCurve,
-    matchStatus,
     hasAdjustedRuler,
     onChangeManualGraphData
+    // manualGraphData is deliberately NOT a dependency: this effect is what
+    // causes it to change (via onChangeManualGraphData -> parent's setState),
+    // so listing it here would refire this same effect every time it runs -
+    // the exact infinite-loop shape the GRAPH_MARGIN fix above already had to
+    // solve once. It's still read fresh from the closure on every real fire,
+    // since every trigger that actually changes it also changes one of the
+    // listed dependencies in the same commit (see the resync effect above).
   ]);
 
   // Mouse / Pointer handlers on Canvas

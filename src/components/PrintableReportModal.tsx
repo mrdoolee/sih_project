@@ -64,7 +64,7 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({
       console.warn('PDF direct export failed, falling back to printable sheet:', err);
       try {
         await printElement(reportRef.current, {
-          title: `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}`,
+          title: `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${groupData.trialIndex || 1}차`,
           pageOrientation: 'portrait'
         });
       } catch (printErr) {
@@ -81,12 +81,12 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({
     setErrorMessage(null);
     try {
       await printElement(reportRef.current, {
-        title: `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}`,
+        title: `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${groupData.trialIndex || 1}차`,
         pageOrientation: 'portrait'
       });
     } catch (err) {
       console.warn('Direct print failed, attempting popup window print:', err);
-      openPrintWindow(reportRef.current, `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}`);
+      openPrintWindow(reportRef.current, `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${groupData.trialIndex || 1}차`);
     } finally {
       setIsPrinting(false);
     }
@@ -94,7 +94,7 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({
 
   const handleOpenNewWindow = () => {
     if (!reportRef.current) return;
-    openPrintWindow(reportRef.current, `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}`);
+    openPrintWindow(reportRef.current, `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${groupData.trialIndex || 1}차`);
   };
 
   return (
@@ -204,6 +204,8 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({
               <span>학년/반: {groupData.grade} {groupData.classNum}</span>
               <span>•</span>
               <span>모둠명: <strong className="text-blue-700">{groupData.groupName}</strong></span>
+              <span>•</span>
+              <span>시행: <strong className="text-blue-700">{groupData.trialIndex || 1}차</strong></span>
               <span>•</span>
               <span>작성일시: {groupData.lastSavedAt || new Date().toLocaleDateString('ko-KR')}</span>
             </div>

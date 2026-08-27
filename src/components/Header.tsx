@@ -10,7 +10,9 @@ import {
   RotateCcw,
   Lock,
   LogOut,
-  Home
+  Home,
+  Plus,
+  Repeat
 } from 'lucide-react';
 import { TopicConfig } from '../types';
 
@@ -30,6 +32,12 @@ interface HeaderProps {
   onOpenAllGroups: () => void;
   onOpenReportPrint: () => void;
   onResetData: () => void;
+  // Repeated-trial (반복 시행) support: every trial number this group has
+  // saved, plus whichever one is currently open in the editor.
+  groupTrialIndices: number[];
+  selectedTrialIndex: number;
+  onSwitchTrial: (trialIndex: number) => void;
+  onStartNewTrial: () => void;
   isSaving: boolean;
   isSyncing: boolean;
   hasUnsavedChanges: boolean;
@@ -52,6 +60,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAllGroups,
   onOpenReportPrint,
   onResetData,
+  groupTrialIndices,
+  selectedTrialIndex,
+  onSwitchTrial,
+  onStartNewTrial,
   isSaving,
   isSyncing,
   hasUnsavedChanges,
@@ -204,6 +216,39 @@ export const Header: React.FC<HeaderProps> = ({
                 인증됨
               </span>
             </div>
+
+            {/* Trial (반복 시행) Selector - only shown once this group has more
+                than one recorded/open trial, so a single-submission group's
+                UI stays exactly as before. */}
+            {groupTrialIndices.length > 1 && (
+              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
+                <Repeat className="w-3.5 h-3.5 text-purple-600" />
+                <span className="font-semibold text-slate-600">시행:</span>
+                <select
+                  id="select-trial"
+                  value={selectedTrialIndex}
+                  onChange={(e) => onSwitchTrial(Number(e.target.value))}
+                  className="bg-transparent font-bold text-purple-800 focus:outline-none cursor-pointer"
+                >
+                  {groupTrialIndices.map((t) => (
+                    <option key={t} value={t}>
+                      {t}차
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button
+              type="button"
+              id="btn-start-new-trial"
+              onClick={onStartNewTrial}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+              title="같은 실험을 다시 수행했다면, 이전 기록은 그대로 두고 새 시행을 별도로 기록합니다"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>새 시행</span>
+            </button>
           </div>
 
           {/* Status Indicators */}

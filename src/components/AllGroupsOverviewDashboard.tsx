@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   TopicConfig,
   GroupExperimentData,
@@ -71,6 +71,8 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   const [selectedTopicId, setSelectedTopicId] = useState<string>(topics[0]?.topicId || 'EXP_01');
   const [selectedGrade, setSelectedGrade] = useState<string>('1학년');
   const [selectedClass, setSelectedClass] = useState<string>('1반');
+  // Which repeated trial (1차, 2차...) of the class is being viewed.
+  const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
   const [viewMode, setViewMode] = useState<'table' | 'matrix' | 'chart' | 'qa'>('table');
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -92,12 +94,43 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     return currentTopic ? getEffectiveReportQuestions(currentTopic) : [];
   }, [currentTopic]);
 
-  // Filter groups for selected Topic, Grade, Class
-  const classGroupsList = useMemo(() => {
+  // Every record for this Topic+Grade+Class across ALL trials - the base for
+  // both the trial selector's option list and the per-group trial-count badges.
+  const classGroupsAllTrials = useMemo(() => {
     return allGroupsData.filter(
       (g) => g.topicId === selectedTopicId && g.grade === selectedGrade && g.classNum === selectedClass
     );
   }, [allGroupsData, selectedTopicId, selectedGrade, selectedClass]);
+
+  // Which trial numbers exist anywhere in this class right now.
+  const availableTrialIndices = useMemo(() => {
+    const set = new Set<number>();
+    classGroupsAllTrials.forEach((g) => set.add(g.trialIndex || 1));
+    if (set.size === 0) set.add(1);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [classGroupsAllTrials]);
+
+  // Default to the most recent trial whenever the topic/grade/class changes -
+  // availableTrialIndices is derived from the same inputs so it's already
+  // fresh by the time this effect runs.
+  useEffect(() => {
+    setSelectedTrialIndex(availableTrialIndices[availableTrialIndices.length - 1] || 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTopicId, selectedGrade, selectedClass]);
+
+  // How many trials each group has recorded, independent of which one is shown.
+  const trialCountByGroup = useMemo(() => {
+    const map: Record<string, number> = {};
+    classGroupsAllTrials.forEach((g) => {
+      map[g.groupName] = (map[g.groupName] || 0) + 1;
+    });
+    return map;
+  }, [classGroupsAllTrials]);
+
+  // Only the selected trial's records feed every table/matrix/chart below.
+  const classGroupsList = useMemo(() => {
+    return classGroupsAllTrials.filter((g) => (g.trialIndex || 1) === selectedTrialIndex);
+  }, [classGroupsAllTrials, selectedTrialIndex]);
 
   // Map each expected group to either its submitted data or placeholder
   const fullGroupsData = useMemo(() => {
@@ -110,10 +143,11 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
         data: match || null,
         isSubmitted: !!match && (match.points?.length > 0 || !!match.conclusionNotes?.summary),
         pointCount: match?.points?.length || 0,
-        evaluation: evaluation || null
+        evaluation: evaluation || null,
+        trialCount: trialCountByGroup[groupName] || 0
       };
     });
-  }, [expectedGroups, classGroupsList, selectedTopicId, selectedGrade, selectedClass, evaluations]);
+  }, [expectedGroups, classGroupsList, selectedTopicId, selectedGrade, selectedClass, evaluations, trialCountByGroup]);
 
   // Filtered by search if any
   const displayedGroups = useMemo(() => {
@@ -145,6 +179,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     const headers = [
       '학년',
       '반',
+      '시행회차',
       '모둠명',
       '제출상태',
       '데이터수',
@@ -159,10 +194,14 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     const rows = fullGroupsData.map((item) => {
       const g = item.data;
       const ptsStr =
-        g?.points?.map((p) => `(${p.x}, ${p.y})${p.isOutlier ? '[이상치]' : ''}`).join('; ') || '없음';
+        g?.points
+          ?.filter((p) => p.x !== '' && p.y !== '')
+          .map((p) => `(${p.x}, ${p.y})${p.isOutlier ? '[이상치]' : ''}`)
+          .join('; ') || '없음';
       return [
         selectedGrade,
         selectedClass,
+        `${selectedTrialIndex}차`,
         item.groupName,
         item.isSubmitted ? '제출완료' : '미제출',
         item.pointCount.toString(),
@@ -180,7 +219,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${currentTopic?.title || '탐구'}_${selectedGrade}_${selectedClass}_전체모둠데이터.csv`);
+    link.setAttribute('download', `${currentTopic?.title || '탐구'}_${selectedGrade}_${selectedClass}_${selectedTrialIndex}차_전체모둠데이터.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -190,7 +229,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   // fit an A4 sheet in landscape with the horizontal scroll containers unlocked.
   const handlePrint = () => {
     printElement('all-groups-overview-printable', {
-      title: `${currentTopic?.title} - ${selectedGrade} ${selectedClass} 전체 모둠 탐구 결과표`,
+      title: `${currentTopic?.title} - ${selectedGrade} ${selectedClass} ${selectedTrialIndex}차 전체 모둠 탐구 결과표`,
       pageOrientation: 'landscape',
       margin: '8mm'
     });
@@ -317,7 +356,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
         </div>
 
         {/* Filters Grid */}
-        <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-4 gap-3">
           {/* Topic Select */}
           <div>
             <label className="block text-xs font-bold text-slate-600 mb-1">
@@ -370,6 +409,27 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
               {availableClasses.map((c) => (
                 <option key={c} value={c}>
                   {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Trial (회차) Select - lets the teacher pick which repeated attempt
+              of the experiment to view; each trial's data is recorded and
+              shown fully separately from the others. */}
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">
+              🔁 시행 회차 선택
+            </label>
+            <select
+              id="select-all-groups-trial"
+              value={selectedTrialIndex}
+              onChange={(e) => setSelectedTrialIndex(Number(e.target.value))}
+              className="w-full px-3 py-2 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+            >
+              {availableTrialIndices.map((t) => (
+                <option key={t} value={t}>
+                  {t}차 시행
                 </option>
               ))}
             </select>
@@ -493,7 +553,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
         {/* Printable Header (Visible on print) */}
         <div className="hidden print:block mb-4 p-4 border-b border-slate-300">
           <h1 className="text-xl font-bold text-slate-900">
-            [{selectedGrade} {selectedClass}] {currentTopic?.title} - 전체 모둠 탐구 결과 종합표
+            [{selectedGrade} {selectedClass} / {selectedTrialIndex}차 시행] {currentTopic?.title} - 전체 모둠 탐구 결과 종합표
           </h1>
           <p className="text-xs text-slate-600 mt-1">
             독립변인(X): {currentTopic?.xVarName} ({currentTopic?.xUnit}) | 종속변인(Y): {currentTopic?.yVarName} ({currentTopic?.yUnit}) | 출력일시: {new Date().toLocaleString()}
@@ -507,7 +567,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                   <Table className="w-4 h-4 text-indigo-600" />
-                  <span>{selectedGrade} {selectedClass} 모둠별 데이터 종합 테이블</span>
+                  <span>{selectedGrade} {selectedClass} · {selectedTrialIndex}차 모둠별 데이터 종합 테이블</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   각 모둠의 측정값(X, Y 쌍), 선택 추세선, 결론 요약 및 채점 상태를 한 번에 검토합니다.
@@ -577,6 +637,16 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                           >
                             {item.groupName}
                           </span>
+                          {/* Shown regardless of which trial is currently selected,
+                              so the teacher never misses that other rounds exist. */}
+                          {item.trialCount > 1 && (
+                            <div
+                              className="mt-1 text-[10px] font-bold text-purple-700 whitespace-nowrap"
+                              title="이 모둠이 기록한 전체 시행 횟수"
+                            >
+                              총 {item.trialCount}회 시행
+                            </div>
+                          )}
                         </td>
 
                         {/* Status */}
@@ -612,9 +682,14 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
 
                         {/* Data Points Sequence */}
                         <td className="py-3.5 px-4">
-                          {isSub && pts.length > 0 ? (
+                          {isSub && pts.some((p) => p.x !== '' && p.y !== '') ? (
                             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                              {pts.map((p, pIdx) => (
+                              {/* A still-blank trailing row (student added a row but
+                                  never filled it in) gets saved along with the real
+                                  data - skip it here instead of showing an empty "(, )" chip. */}
+                              {pts
+                                .filter((p) => p.x !== '' && p.y !== '')
+                                .map((p, pIdx) => (
                                 <span
                                   key={p.id || pIdx}
                                   className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-medium border shrink-0 font-mono ${
@@ -720,7 +795,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>측정값 비교 매트릭스 ({currentTopic?.xVarName}에 따른 모둠별 {currentTopic?.yVarName} 비교)</span>
+                <span>측정값 비교 매트릭스 · {selectedTrialIndex}차 ({currentTopic?.xVarName}에 따른 모둠별 {currentTopic?.yVarName} 비교)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 모든 모둠의 측정 데이터를 포인트 순서(1번, 2번...) 및 X값에 따라 가로-세로 매트릭스로 정렬하여 오차와 경향성을 한눈에 비교합니다.
@@ -759,7 +834,9 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                 <tbody className="divide-y divide-slate-200">
                   {fullGroupsData.map((item) => {
                     const g = item.data;
-                    const pts = g?.points || [];
+                    // Drop still-blank trailing rows (a student added a row but never
+                    // filled it in) - otherwise they show up as an empty measurement slot.
+                    const pts = (g?.points || []).filter((p) => p.x !== '' && p.y !== '');
                     return (
                       <tr key={item.groupName} className="hover:bg-slate-50">
                         <td className="p-3 border border-slate-200 text-center font-bold bg-slate-50/50">
@@ -837,7 +914,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                 <BarChart3 className="w-4 h-4 text-indigo-600" />
-                <span>전체 모둠 측정점 및 추세선 겹쳐보기 ({selectedGrade} {selectedClass})</span>
+                <span>전체 모둠 측정점 및 추세선 겹쳐보기 ({selectedGrade} {selectedClass} · {selectedTrialIndex}차)</span>
               </h3>
               <span className="text-xs text-slate-400 whitespace-nowrap">
                 각 모둠별 고유 색상 점과 실선 추세선
@@ -999,7 +1076,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                 <HelpCircle className="w-4 h-4 text-purple-600" />
-                <span>모둠별 탐구 질문지 답변 비교 ({selectedGrade} {selectedClass})</span>
+                <span>모둠별 탐구 질문지 답변 비교 ({selectedGrade} {selectedClass} · {selectedTrialIndex}차)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 이 탐구 주제의 질문 문항에 대해 각 모둠 학생들이 작성한 서술형 답변을 한눈에 나란히 비교합니다.

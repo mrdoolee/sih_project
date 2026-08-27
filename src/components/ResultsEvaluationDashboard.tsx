@@ -99,6 +99,10 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedGroupName, setSelectedGroupName] = useState<string>('');
+  // Which repeated trial (1차, 2차...) of the group is being reviewed. The
+  // rubric score/feedback below stay the same across trials by design - only
+  // the displayed measurements/graph/report switch.
+  const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
 
   // Local evaluations store
   const [evaluations, setEvaluations] = useState<Record<string, GroupEvaluation>>(() => getStoredEvaluations());
@@ -212,27 +216,48 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
     };
   }, []);
 
-  // Filter group data matching current criteria
-  const matchingClassGroups = useMemo(() => {
+  // Every record for this Topic+Grade+Class across ALL trials - the base for
+  // the trial selector's options and the per-group trial-count indicator.
+  const matchingClassGroupsAllTrials = useMemo(() => {
     return allGroupsData.filter(
       (g) => g.topicId === selectedTopicId && g.grade === selectedGrade && g.classNum === selectedClass
     );
   }, [allGroupsData, selectedTopicId, selectedGrade, selectedClass]);
 
-  // Selected group data
+  // Which trial numbers exist anywhere in this class right now.
+  const availableTrialIndices = useMemo(() => {
+    const set = new Set<number>();
+    matchingClassGroupsAllTrials.forEach((g) => set.add(g.trialIndex || 1));
+    if (set.size === 0) set.add(1);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [matchingClassGroupsAllTrials]);
+
+  // Default to the latest trial whenever the topic/grade/class changes -
+  // availableTrialIndices is derived from the same inputs so it's already
+  // fresh by the time this effect runs.
+  useEffect(() => {
+    setSelectedTrialIndex(availableTrialIndices[availableTrialIndices.length - 1] || 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTopicId, selectedGrade, selectedClass]);
+
+  // How many trials each group has recorded, independent of which one is shown.
+  const trialCountByGroup = useMemo(() => {
+    const map: Record<string, number> = {};
+    matchingClassGroupsAllTrials.forEach((g) => {
+      map[g.groupName] = (map[g.groupName] || 0) + 1;
+    });
+    return map;
+  }, [matchingClassGroupsAllTrials]);
+
+  // Only the selected trial's records feed the group picker/detail panel below.
+  const matchingClassGroups = useMemo(() => {
+    return matchingClassGroupsAllTrials.filter((g) => (g.trialIndex || 1) === selectedTrialIndex);
+  }, [matchingClassGroupsAllTrials, selectedTrialIndex]);
+
+  // Selected group data (for the currently selected trial only)
   const currentGroupData = useMemo(() => {
-    return (
-      matchingClassGroups.find((g) => g.groupName === selectedGroupName) ||
-      allGroupsData.find(
-        (g) =>
-          g.topicId === selectedTopicId &&
-          g.grade === selectedGrade &&
-          g.classNum === selectedClass &&
-          g.groupName === selectedGroupName
-      ) ||
-      null
-    );
-  }, [matchingClassGroups, allGroupsData, selectedTopicId, selectedGrade, selectedClass, selectedGroupName]);
+    return matchingClassGroups.find((g) => g.groupName === selectedGroupName) || null;
+  }, [matchingClassGroups, selectedGroupName]);
 
   // Current group evaluation state
   const currentEvalKey = `${selectedTopicId}__${selectedGrade}__${selectedClass}__${selectedGroupName}`;
@@ -403,7 +428,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
   // Print Handlers
   const handlePrintGroupReport = () => {
     printElement('printable-group-evaluation-report', {
-      title: `[탐구평가서]_${selectedTopicId}_${selectedGrade}_${selectedClass}_${selectedGroupName}`,
+      title: `[탐구평가서]_${selectedTopicId}_${selectedGrade}_${selectedClass}_${selectedGroupName}_${selectedTrialIndex}차`,
       pageOrientation: 'portrait'
     });
   };
@@ -450,8 +475,8 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           </div>
         </div>
 
-        {/* 4-Step Selection Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 5-Step Selection Filters */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Topic Select */}
           <div>
             <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
@@ -521,22 +546,38 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
             >
               {currentTopic?.groups.map((grp) => {
-                const groupData = allGroupsData.find(
-                  (g) =>
-                    g.topicId === selectedTopicId &&
-                    g.grade === selectedGrade &&
-                    g.classNum === selectedClass &&
-                    g.groupName === grp
-                );
+                const groupData = matchingClassGroups.find((g) => g.groupName === grp);
                 const evalItem = evaluations[`${selectedTopicId}__${selectedGrade}__${selectedClass}__${grp}`];
                 const ptCount = groupData?.points?.length || 0;
                 const statusTag = evalItem ? `[평가:${evalItem.score}]` : ptCount > 0 ? `[제출:${ptCount}건]` : '[미제출]';
+                const trials = trialCountByGroup[grp] || 0;
                 return (
                   <option key={grp} value={grp}>
                     {grp} {statusTag}
+                    {trials > 1 ? ` (총 ${trials}회 시행)` : ''}
                   </option>
                 );
               })}
+            </select>
+          </div>
+
+          {/* Trial (회차) Select - the rubric score/feedback stay the same
+              across trials; only the reviewed measurements/graph/report switch. */}
+          <div>
+            <label className="text-xs font-semibold text-slate-700 mb-1.5 block flex items-center gap-1">
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+              <span>5. 시행 회차</span>
+            </label>
+            <select
+              value={selectedTrialIndex}
+              onChange={(e) => setSelectedTrialIndex(Number(e.target.value))}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
+            >
+              {availableTrialIndices.map((t) => (
+                <option key={t} value={t}>
+                  {t}차 시행
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -546,15 +587,10 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">모둠 바로가기:</span>
           {currentTopic?.groups.map((grp) => {
             const isSelected = grp === selectedGroupName;
-            const groupData = allGroupsData.find(
-              (g) =>
-                g.topicId === selectedTopicId &&
-                g.grade === selectedGrade &&
-                g.classNum === selectedClass &&
-                g.groupName === grp
-            );
+            const groupData = matchingClassGroups.find((g) => g.groupName === grp);
             const evalItem = evaluations[`${selectedTopicId}__${selectedGrade}__${selectedClass}__${grp}`];
             const hasData = (groupData?.points?.length || 0) > 0;
+            const trials = trialCountByGroup[grp] || 0;
 
             return (
               <button
@@ -570,6 +606,16 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                 }`}
               >
                 <span>{grp}</span>
+                {trials > 1 && (
+                  <span
+                    className={`text-[9px] font-bold px-1 rounded whitespace-nowrap ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
+                    }`}
+                    title="이 모둠이 기록한 전체 시행 횟수"
+                  >
+                    {trials}회
+                  </span>
+                )}
                 {evalItem ? (
                   <span className="w-4 h-4 shrink-0 rounded-full bg-emerald-100 text-emerald-800 text-[10px] leading-none flex items-center justify-center font-bold whitespace-nowrap">
                     {shortGradeBadge(evalItem.score)}
@@ -595,6 +641,9 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm border border-indigo-200 whitespace-nowrap">
                   {selectedGrade} {selectedClass} {selectedGroupName}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 font-bold text-xs border border-purple-200 whitespace-nowrap">
+                  {selectedTrialIndex}차 시행
                 </span>
                 <span className="text-xs text-slate-500 whitespace-nowrap">
                   최종 제출: {formatSubmittedAt(currentGroupData?.lastSavedAt)}
@@ -897,6 +946,11 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                   <p className="text-[11px] text-slate-500">
                     {selectedGrade} {selectedClass} {selectedGroupName} | 환산 총점: <span className="font-bold text-indigo-600">{scaledScore100}점</span> ({totalRubricScore}/25)
                   </p>
+                  {(trialCountByGroup[selectedGroupName] || 0) > 1 && (
+                    <p className="text-[10px] text-purple-600 mt-0.5">
+                      이 평가는 시행 회차와 무관하게 모둠 전체 탐구 역량에 대해 하나만 기록됩니다.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1124,13 +1178,14 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           <div className="text-center border-b-2 border-slate-900 pb-4 mb-6">
             <h1 className="text-2xl font-bold">과학 탐구 실험 모둠 결과 및 교사 평가서</h1>
             <p className="text-sm text-slate-600 mt-1">
-              탐구 주제: {currentTopic?.title} | {selectedGrade} {selectedClass} {selectedGroupName}
+              탐구 주제: {currentTopic?.title} | {selectedGrade} {selectedClass} {selectedGroupName} | {selectedTrialIndex}차 시행
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-slate-50 border border-slate-300 rounded-xl text-xs">
             <div>
               <p><strong>• 학년 / 반 / 모둠:</strong> {selectedGrade} {selectedClass} {selectedGroupName}</p>
+              <p className="mt-1"><strong>• 시행 회차:</strong> {selectedTrialIndex}차{(trialCountByGroup[selectedGroupName] || 0) > 1 ? ` (전체 ${trialCountByGroup[selectedGroupName]}회 시행 중)` : ''}</p>
               <p className="mt-1"><strong>• 측정 데이터 수:</strong> {currentGroupData?.points?.length || 0}건</p>
               {regressionResult && (
                 <p className="mt-1"><strong>• 도출 수식:</strong> y = {regressionResult.slope}x + {regressionResult.intercept} (R²={regressionResult.r2})</p>
@@ -1223,7 +1278,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           <div className="text-center border-b-2 border-slate-900 pb-4 mb-6">
             <h1 className="text-2xl font-bold">과학 탐구 실험 학급 종합 평가 및 제출 현황표</h1>
             <p className="text-sm text-slate-600 mt-1">
-              주제: {currentTopic?.title} | 대상: {selectedGrade} {selectedClass}
+              주제: {currentTopic?.title} | 대상: {selectedGrade} {selectedClass} | {selectedTrialIndex}차 시행
             </p>
           </div>
 
@@ -1241,13 +1296,7 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             </thead>
             <tbody>
               {currentTopic?.groups.map((grp) => {
-                const groupData = allGroupsData.find(
-                  (g) =>
-                    g.topicId === selectedTopicId &&
-                    g.grade === selectedGrade &&
-                    g.classNum === selectedClass &&
-                    g.groupName === grp
-                );
+                const groupData = matchingClassGroups.find((g) => g.groupName === grp);
                 const evalItem = evaluations[`${selectedTopicId}__${selectedGrade}__${selectedClass}__${grp}`];
                 const ptCount = groupData?.points?.length || 0;
                 const hasReport = Boolean(

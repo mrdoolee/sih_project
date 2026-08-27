@@ -122,6 +122,9 @@ export interface GroupExperimentData {
   manualGraphData?: StudentManualGraphData; // Student's manual graph drawings
   conclusionNotes: ConclusionNotes;
   lastSavedAt?: string;
+  // Which repeated attempt of the same experiment this record is (1차, 2차...).
+  // Missing/undefined means 1 - existing single-submission data stays valid.
+  trialIndex?: number;
 }
 
 export interface GroupAuthRecord {

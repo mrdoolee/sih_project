@@ -191,6 +191,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Edit / Add Topic State
   const [editingTopic, setEditingTopic] = useState<TopicConfig | null>(null);
   const [isAddingTopic, setIsAddingTopic] = useState(false);
+  // Raw text for the three comma-separated topic fields, kept separate from
+  // editingTopic.grades/classes/groups. If the <input value> were derived by
+  // re-joining the parsed array on every keystroke, typing a comma got erased
+  // immediately (the array from "A모둠," is ["A모둠"], which re-joins back to
+  // "A모둠" with no comma) - confirmed live, commas/spaces vanished mid-typing.
+  const [gradesInputText, setGradesInputText] = useState('');
+  const [classesInputText, setClassesInputText] = useState('');
+  const [groupsInputText, setGroupsInputText] = useState('');
 
   // Classroom QR & Link Share Modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -1075,6 +1083,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       coreQuestions: defaultQs.map((d) => d.question),
       reportQuestions: defaultQs
     });
+    setGradesInputText(baseTopic.grades.join(', '));
+    setClassesInputText(baseTopic.classes.join(', '));
+    setGroupsInputText(baseTopic.groups.join(', '));
     setIsAddingTopic(true);
   };
 
@@ -2438,13 +2449,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <label className="font-bold text-slate-700">대상 학년 목록 (콤마 구분)</label>
                     <input
                       type="text"
-                      value={editingTopic.grades.join(', ')}
-                      onChange={(e) =>
+                      value={gradesInputText}
+                      onChange={(e) => {
+                        setGradesInputText(e.target.value);
                         setEditingTopic({
                           ...editingTopic,
                           grades: e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                        })
-                      }
+                        });
+                      }}
                       placeholder="1학년, 2학년, 3학년"
                       className="w-full mt-1.5 p-2.5 border border-slate-300 rounded-xl bg-white"
                     />
@@ -2454,13 +2466,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <label className="font-bold text-slate-700">대상 반 목록 (콤마 구분)</label>
                     <input
                       type="text"
-                      value={editingTopic.classes.join(', ')}
-                      onChange={(e) =>
+                      value={classesInputText}
+                      onChange={(e) => {
+                        setClassesInputText(e.target.value);
                         setEditingTopic({
                           ...editingTopic,
                           classes: e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                        })
-                      }
+                        });
+                      }}
                       placeholder="1반, 2반, 3반, 4반"
                       className="w-full mt-1.5 p-2.5 border border-slate-300 rounded-xl bg-white"
                     />
@@ -2476,13 +2489,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <input
                       type="text"
                       required
-                      value={editingTopic.groups.join(', ')}
-                      onChange={(e) =>
+                      value={groupsInputText}
+                      onChange={(e) => {
+                        setGroupsInputText(e.target.value);
                         setEditingTopic({
                           ...editingTopic,
                           groups: e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                        })
-                      }
+                        });
+                      }}
                       placeholder="A모둠, B모둠, C모둠, D모둠, E모둠, F모둠"
                       className="w-full mt-1.5 p-2.5 border border-slate-300 rounded-xl bg-white font-medium"
                     />
@@ -2830,6 +2844,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           type="button"
                           onClick={() => {
                             setEditingTopic(t);
+                            setGradesInputText(t.grades.join(', '));
+                            setClassesInputText(t.classes.join(', '));
+                            setGroupsInputText(t.groups.join(', '));
                             setIsAddingTopic(false);
                           }}
                           className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"

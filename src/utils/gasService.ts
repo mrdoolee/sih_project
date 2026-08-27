@@ -233,6 +233,21 @@ export function getGroupDataKey(topicId: string, grade: string, classNum: string
   return `${topicId}-${grade}-${classNum}`;
 }
 
+// All trial records (1차, 2차...) for one group, sorted oldest-first. A
+// missing trialIndex is treated as 1 so pre-existing single-submission data
+// still shows up as "trial 1".
+export function getGroupTrials(list: GroupExperimentData[], groupName: string): GroupExperimentData[] {
+  return list
+    .filter((item) => item.groupName === groupName)
+    .sort((a, b) => (a.trialIndex || 1) - (b.trialIndex || 1));
+}
+
+export function getLatestTrialIndex(list: GroupExperimentData[], groupName: string): number {
+  const trials = getGroupTrials(list, groupName);
+  if (trials.length === 0) return 1;
+  return Math.max(...trials.map((t) => t.trialIndex || 1));
+}
+
 export function getGroupPasswordKey(topicId: string, grade: string, classNum: string, groupName: string): string {
   return `${topicId}__${grade}__${classNum}__${groupName}`;
 }
@@ -716,9 +731,16 @@ export async function saveGroupData(
   const allData = getStoredAllGroupData();
   const classList = allData[key] ? [...allData[key]] : [];
   
-  const existingIdx = classList.findIndex((item) => item.groupName === data.groupName);
+  // A group can have multiple trial records (1차, 2차...) side by side in the
+  // same class array - only overwrite the record for this exact trial, so
+  // saving a new trial never clobbers a previous one.
+  const trialIndex = data.trialIndex || 1;
+  const existingIdx = classList.findIndex(
+    (item) => item.groupName === data.groupName && (item.trialIndex || 1) === trialIndex
+  );
   const updatedData: GroupExperimentData = {
     ...data,
+    trialIndex,
     groupPassword: currentPassword || undefined,
     lastSavedAt: new Date().toLocaleString('ko-KR')
   };
@@ -979,10 +1001,14 @@ function doGet(e) {
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport]
+      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport, TrialIndex]
       if (row[1] == topicId && row[2] == grade && row[3] == classNum) {
         const groupName = String(row[4]);
-        if (!groupMap[groupName]) {
+        const trialIndex = Number(row[14]) || 1;
+        // Key by group + trial so repeated attempts land in separate records
+        // instead of merging every trial's points into one array.
+        const mapKey = groupName + '__' + trialIndex;
+        if (!groupMap[mapKey]) {
           let answersMap = {};
           // 1. N열(row[13])에 전체 문항이 JSON으로 저장되어 있는 경우 전체 파싱
           if (row[13]) {
@@ -998,12 +1024,13 @@ function doGet(e) {
           if (!answersMap['q1'] && row[10]) answersMap['q1'] = String(row[10]);
           if (!answersMap['q2'] && row[11]) answersMap['q2'] = String(row[11]);
           if (!answersMap['q3'] && row[12]) answersMap['q3'] = String(row[12]);
-          
-          groupMap[groupName] = {
+
+          groupMap[mapKey] = {
             topicId: topicId,
             grade: grade,
             classNum: classNum,
             groupName: groupName,
+            trialIndex: trialIndex,
             points: [],
             conclusionNotes: {
               summary: String(answersMap['q1'] || row[10] || ''),
@@ -1014,16 +1041,16 @@ function doGet(e) {
             lastSavedAt: String(row[0])
           };
         }
-        
+
         if (row[6] !== '' && row[7] !== '') {
           const xNum = Number(row[6]);
           const yNum = Number(row[7]);
           // 시트가 수동으로 편집되어 숫자가 아닌 값이 들어간 경우, NaN을 그대로
           // 내보내 차트/회귀분석을 오염시키는 대신 해당 측정값만 건너뛴다.
           if (!isNaN(xNum) && !isNaN(yNum)) {
-            groupMap[groupName].points.push({
+            groupMap[mapKey].points.push({
               id: String(row[5] || i),
-              order: Number(row[5] || groupMap[groupName].points.length + 1),
+              order: Number(row[5] || groupMap[mapKey].points.length + 1),
               x: xNum,
               y: yNum,
               isOutlier: String(row[8]) === 'Y',
@@ -1328,11 +1355,15 @@ function doPost(e) {
         const sheet = ss.getSheetByName(SHEET_DATA_NAME);
         const timestamp = new Date();
 
-        // 기존 모둠 데이터 삭제 후 최신 데이터로 저장
+        // 같은 회차(시행차수)의 기존 모둠 데이터만 삭제하고 최신 데이터로 저장.
+        // 시행차수가 다르면(예: 1차 저장 중 2차 행) 건드리지 않아야 반복 시행
+        // 기록이 서로 덮어쓰지 않고 각각 남는다.
+        const payloadTrial = payload.trialIndex || 1;
         const allRows = sheet.getDataRange().getValues();
         for (let i = allRows.length - 1; i >= 1; i--) {
           const r = allRows[i];
-          if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName) {
+          const rowTrial = r[14] || 1;
+          if (r[1] == payload.topicId && r[2] == payload.grade && r[3] == payload.classNum && r[4] == payload.groupName && rowTrial == payloadTrial) {
             sheet.deleteRow(i + 1);
           }
         }
@@ -1368,7 +1399,8 @@ function doPost(e) {
                 sanitizeCell(q1),
                 sanitizeCell(q2),
                 sanitizeCell(q3),
-                sanitizeCell(fullReportJson)
+                sanitizeCell(fullReportJson),
+                payloadTrial
               ]);
             }
           });
@@ -1567,10 +1599,13 @@ function ensureDataSheet(ss) {
     sheet.appendRow([
       '타임스탬프', '주제ID', '학년', '반', '모둠명', '측정차수',
       '독립변인(X)', '종속변인(Y)', '이상치여부', '측정메모',
-      '문항1_답변(자료해석)', '문항2_답변(과학원리)', '문항3_답변(오차분석)', '전체_보고서_통합답변'
+      '문항1_답변(자료해석)', '문항2_답변(과학원리)', '문항3_답변(오차분석)', '전체_보고서_통합답변',
+      '시행차수'
     ]);
     sheet.setFrozenRows(1);
-    sheet.getRange("A1:N1").setBackground("#fce8e6").setFontWeight("bold");
+    // Appended as the last column (O) rather than inserted next to 모둠명 so
+    // every other column's index stays the same for existing sheets/scripts.
+    sheet.getRange("A1:O1").setBackground("#fce8e6").setFontWeight("bold");
   }
 }
 

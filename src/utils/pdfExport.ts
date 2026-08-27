@@ -8,7 +8,7 @@ export async function exportReportToPDF(
   groupData: GroupExperimentData
 ): Promise<void> {
   const cleanTitle = (topic?.title || '과학탐구보고서').replace(/[\\/:*?"<>|]/g, '_');
-  const fileName = `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${cleanTitle}.pdf`;
+  const fileName = `과학탐구보고서_${groupData.grade}_${groupData.classNum}_${groupData.groupName}_${groupData.trialIndex || 1}차_${cleanTitle}.pdf`;
 
   // Capture element with full scroll dimensions and zero scroll offset
   const canvas = await html2canvas(element, {

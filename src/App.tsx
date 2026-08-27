@@ -18,6 +18,8 @@ import {
   getStoredTeacherSettings,
   saveStoredTeacherSettings,
   getGroupDataKey,
+  getGroupTrials,
+  getLatestTrialIndex,
   saveGroupData,
   fetchAllGroupsData,
   fetchTopicsFromGAS,
@@ -35,6 +37,7 @@ import { PrintableReportModal } from './components/PrintableReportModal';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { IndexSelectionScreen } from './components/IndexSelectionScreen';
 import { TeacherAuthModal } from './components/TeacherAuthModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { CreditFooter } from './components/CreditFooter';
 
 export default function App() {
@@ -137,7 +140,10 @@ export default function App() {
 
   // All groups dataset for current Topic + Grade + Class
   const [allGroupsData, setAllGroupsData] = useState<GroupExperimentData[]>([]);
-  
+
+  // Which repeated trial (1차, 2차...) of the current group is loaded in the editor.
+  const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
+
   // Current active group's data
   const [points, setPoints] = useState<DataPoint[]>([]);
   const [selectedTrendline, setSelectedTrendline] = useState<TrendlineType>(
@@ -165,14 +171,51 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Load group data from storage whenever topic, grade, class, or group changes
+  // Confirmation modal for destructive-ish student actions (trial switch/start).
+  // A native window.confirm() blocks the whole tab's JS thread while open - it
+  // froze this exact flow under browser automation, and is fragile in any
+  // sandboxed/embedded context - so this uses the same in-app ConfirmModal the
+  // teacher console uses instead.
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
+
+  const openConfirm = (config: {
+    title: string;
+    description: string;
+    subWarning?: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  }) => {
+    setConfirmModal({ isOpen: true, ...config });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Load group data from storage whenever topic, grade, class, or group changes.
+  // Defaults to the group's latest trial (1차 if it has never submitted before) -
+  // switching trials within the same group is handled separately by handleSwitchTrial.
   const loadActiveGroupData = useCallback(() => {
     const key = getGroupDataKey(selectedTopicId, selectedGrade, selectedClass);
     const store = getStoredAllGroupData();
     const classList = store[key] || [];
     setAllGroupsData(classList);
 
-    const existing = classList.find((item) => item.groupName === selectedGroup);
+    const latestTrial = getLatestTrialIndex(classList, selectedGroup);
+    setSelectedTrialIndex(latestTrial);
+
+    const existing = classList.find(
+      (item) => item.groupName === selectedGroup && (item.trialIndex || 1) === latestTrial
+    );
     if (existing) {
       setPoints(existing.points || []);
       setSelectedTrendline(existing.selectedTrendline || currentTopic.defaultTrendline || 'linear');
@@ -212,7 +255,8 @@ export default function App() {
       selectedTrendline,
       manualGraphData,
       conclusionNotes,
-      lastSavedAt: new Date().toLocaleString('ko-KR')
+      lastSavedAt: new Date().toLocaleString('ko-KR'),
+      trialIndex: selectedTrialIndex
     };
 
     const result = await saveGroupData(currentGroupData, gasConfig.webAppUrl);
@@ -388,6 +432,89 @@ export default function App() {
     showToast('표 데이터를 초기화했습니다.');
   };
 
+  // Every trial (1차, 2차...) this group has actually saved, plus whatever
+  // trial is currently open in the editor (even if not saved yet) so the
+  // switcher always includes it.
+  const groupTrialIndices = useMemo(() => {
+    const saved = getGroupTrials(allGroupsData, selectedGroup).map((t) => t.trialIndex || 1);
+    return Array.from(new Set([...saved, selectedTrialIndex])).sort((a, b) => a - b);
+  }, [allGroupsData, selectedGroup, selectedTrialIndex]);
+
+  // Load a different trial of the same group into the editor without
+  // re-authenticating or resetting the topic/grade/class/group selection.
+  const applySwitchTrial = (trialIndex: number) => {
+    const existing = allGroupsData.find(
+      (item) => item.groupName === selectedGroup && (item.trialIndex || 1) === trialIndex
+    );
+    if (existing) {
+      setPoints(existing.points || []);
+      setSelectedTrendline(existing.selectedTrendline || currentTopic.defaultTrendline || 'linear');
+      setManualGraphData(existing.manualGraphData);
+      setConclusionNotes(existing.conclusionNotes || { summary: '', principle: '', errorAnalysis: '' });
+      setLastSavedAt(existing.lastSavedAt);
+    }
+    setSelectedTrialIndex(trialIndex);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleSwitchTrial = (trialIndex: number) => {
+    if (trialIndex === selectedTrialIndex) return;
+    if (!hasUnsavedChanges) {
+      applySwitchTrial(trialIndex);
+      return;
+    }
+    openConfirm({
+      title: '저장하지 않은 변경사항이 있습니다',
+      description: '다른 시행으로 이동하면 저장하지 않은 변경사항이 사라집니다. 계속하시겠습니까?',
+      confirmText: '이동하기',
+      cancelText: '취소',
+      onConfirm: () => {
+        closeConfirm();
+        applySwitchTrial(trialIndex);
+      }
+    });
+  };
+
+  // Start a brand-new, blank trial for this group - previous trials stay
+  // saved and reachable via the trial switcher, nothing is overwritten.
+  const applyStartNewTrial = () => {
+    const existingTrials = getGroupTrials(allGroupsData, selectedGroup);
+    // If this group has never actually saved anything yet, the blank editor
+    // already IS trial 1 - don't skip straight to "2차" with nothing behind it.
+    const nextTrial = existingTrials.length === 0 ? 1 : getLatestTrialIndex(allGroupsData, selectedGroup) + 1;
+
+    setSelectedTrialIndex(nextTrial);
+    setPoints([
+      { id: '1', order: 1, x: '', y: '', isOutlier: false },
+      { id: '2', order: 2, x: '', y: '', isOutlier: false },
+      { id: '3', order: 3, x: '', y: '', isOutlier: false },
+      { id: '4', order: 4, x: '', y: '', isOutlier: false }
+    ]);
+    setSelectedTrendline(currentTopic.defaultTrendline || 'linear');
+    setManualGraphData(undefined);
+    setConclusionNotes({ summary: '', principle: '', errorAnalysis: '' });
+    setLastSavedAt(undefined);
+    setHasUnsavedChanges(false);
+    showToast(`${nextTrial}차 시행을 새로 시작합니다. 데이터를 입력하고 저장하세요.`);
+  };
+
+  const handleStartNewTrial = () => {
+    if (!hasUnsavedChanges) {
+      applyStartNewTrial();
+      return;
+    }
+    openConfirm({
+      title: '저장하지 않은 변경사항이 있습니다',
+      description: '새 시행을 시작하면 저장하지 않은 변경사항이 사라집니다. 계속하시겠습니까?',
+      confirmText: '새 시행 시작',
+      cancelText: '취소',
+      onConfirm: () => {
+        closeConfirm();
+        applyStartNewTrial();
+      }
+    });
+  };
+
   // Active trendline result for report builder
   const currentTrendResult = useMemo(() => {
     return computeTrendline(selectedTrendline, points);
@@ -412,8 +539,9 @@ export default function App() {
     selectedTrendline,
     manualGraphData,
     conclusionNotes,
-    lastSavedAt
-  }), [selectedTopicId, selectedGrade, selectedClass, selectedGroup, points, selectedTrendline, manualGraphData, conclusionNotes, lastSavedAt]);
+    lastSavedAt,
+    trialIndex: selectedTrialIndex
+  }), [selectedTopicId, selectedGrade, selectedClass, selectedGroup, points, selectedTrendline, manualGraphData, conclusionNotes, lastSavedAt, selectedTrialIndex]);
 
   // If on teacher page view
   if (currentPage === 'teacher') {
@@ -529,6 +657,10 @@ export default function App() {
         onOpenAllGroups={() => setIsAllGroupsOpen(true)}
         onOpenReportPrint={() => setIsPrintModalOpen(true)}
         onResetData={handleResetData}
+        groupTrialIndices={groupTrialIndices}
+        selectedTrialIndex={selectedTrialIndex}
+        onSwitchTrial={handleSwitchTrial}
+        onStartNewTrial={handleStartNewTrial}
         isSaving={isSaving}
         isSyncing={isSyncing}
         hasUnsavedChanges={hasUnsavedChanges}
@@ -564,6 +696,7 @@ export default function App() {
               manualGraphData={manualGraphData}
               onChangeManualGraphData={handleChangeManualGraphData}
               allowAutoAnalysis={teacherSettings.allowAutoAnalysis}
+              trialIndex={selectedTrialIndex}
               onChangeTrendline={(t) => {
                 setSelectedTrendline(t);
                 setHasUnsavedChanges(true);
@@ -614,6 +747,19 @@ export default function App() {
         onClose={() => setIsTeacherAuthOpen(false)}
         onSuccess={handleTeacherAuthSuccess}
         teacherSettings={teacherSettings}
+      />
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={closeConfirm}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        subWarning={confirmModal.subWarning}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        variant="warning"
+        icon="alert"
       />
     </div>
   );
