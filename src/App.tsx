@@ -271,7 +271,19 @@ export default function App() {
     setHasUnsavedChanges(false);
     setLastSavedAt(currentGroupData.lastSavedAt);
 
-    // Refresh class dataset
+    // saveGroupData() above already wrote this trial to localStorage
+    // synchronously before it ever attempted the (possibly slow) GAS network
+    // call. Refresh allGroupsData from that local copy right away instead of
+    // waiting on the network-bound fetchAllGroupsData below - otherwise a
+    // student who clicks "새 시행" right after saving can hit a window where
+    // allGroupsData still doesn't include the trial they just saved, so the
+    // "next trial" number gets computed wrong (stays on the same trial
+    // instead of advancing) and the editor just silently blanks out.
+    const key = getGroupDataKey(selectedTopicId, selectedGrade, selectedClass);
+    setAllGroupsData(getStoredAllGroupData()[key] || []);
+
+    // Refresh class dataset from the server too, in case other devices/GAS
+    // have newer data than this local copy.
     const updatedClassList = await fetchAllGroupsData(
       selectedTopicId,
       selectedGrade,
@@ -414,10 +426,19 @@ export default function App() {
   // Start a brand-new, blank trial for this group - previous trials stay
   // saved and reachable via the trial switcher, nothing is overwritten.
   const applyStartNewTrial = () => {
-    const existingTrials = getGroupTrials(allGroupsData, selectedGroup);
+    // Read localStorage directly instead of the allGroupsData React state.
+    // saveGroupData() writes to localStorage synchronously before it ever
+    // attempts its (possibly slow, network-bound) GAS call, but allGroupsData
+    // only catches up once that whole save finishes - a student who saves and
+    // immediately clicks "새 시행" can land here before that state update
+    // arrives, under-counting existing trials and silently re-blanking the
+    // current trial instead of actually advancing to the next one.
+    const key = getGroupDataKey(selectedTopicId, selectedGrade, selectedClass);
+    const freshClassList = getStoredAllGroupData()[key] || [];
+    const existingTrials = getGroupTrials(freshClassList, selectedGroup);
     // If this group has never actually saved anything yet, the blank editor
     // already IS trial 1 - don't skip straight to "2차" with nothing behind it.
-    const nextTrial = existingTrials.length === 0 ? 1 : getLatestTrialIndex(allGroupsData, selectedGroup) + 1;
+    const nextTrial = existingTrials.length === 0 ? 1 : getLatestTrialIndex(freshClassList, selectedGroup) + 1;
 
     setSelectedTrialIndex(nextTrial);
     setPoints([
