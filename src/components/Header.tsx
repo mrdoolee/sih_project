@@ -217,27 +217,24 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
 
-            {/* Trial (반복 시행) Selector - only shown once this group has more
-                than one recorded/open trial, so a single-submission group's
-                UI stays exactly as before. */}
-            {groupTrialIndices.length > 1 && (
-              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
-                <Repeat className="w-3.5 h-3.5 text-purple-600" />
-                <span className="font-semibold text-slate-600">시행:</span>
-                <select
-                  id="select-trial"
-                  value={selectedTrialIndex}
-                  onChange={(e) => onSwitchTrial(Number(e.target.value))}
-                  className="bg-transparent font-bold text-purple-800 focus:outline-none cursor-pointer"
-                >
-                  {groupTrialIndices.map((t) => (
-                    <option key={t} value={t}>
-                      {t}차
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Trial (반복 시행) box - always rendered (not conditionally
+                mounted) so switching trials doesn't shift/jank the layout. */}
+            <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
+              <Repeat className="w-3.5 h-3.5 text-purple-600" />
+              <span className="font-semibold text-slate-600">시행:</span>
+              <select
+                id="select-trial"
+                value={selectedTrialIndex}
+                onChange={(e) => onSwitchTrial(Number(e.target.value))}
+                className="bg-transparent font-bold text-purple-800 focus:outline-none cursor-pointer"
+              >
+                {groupTrialIndices.map((t) => (
+                  <option key={t} value={t}>
+                    {t}차
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button
               type="button"

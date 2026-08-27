@@ -69,8 +69,8 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   onSelectGroupForDetail
 }) => {
   const [selectedTopicId, setSelectedTopicId] = useState<string>(topics[0]?.topicId || 'EXP_01');
-  const [selectedGrade, setSelectedGrade] = useState<string>('1학년');
-  const [selectedClass, setSelectedClass] = useState<string>('1반');
+  const [selectedGrade, setSelectedGrade] = useState<string>('');
+  const [selectedClass, setSelectedClass] = useState<string>('');
   // Which repeated trial (1차, 2차...) of the class is being viewed.
   const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
   const [viewMode, setViewMode] = useState<'table' | 'matrix' | 'chart' | 'qa'>('table');
@@ -85,6 +85,22 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   const availableGrades = currentTopic?.grades || ['1학년', '2학년', '3학년'];
   const availableClasses = currentTopic?.classes || ['1반', '2반', '3반', '4반'];
   const expectedGroups = currentTopic?.groups || ['A모둠', 'B모둠', 'C모둠', 'D모둠', 'E모둠', 'F모둠'];
+
+  // Keep grade/class valid whenever the topic changes - a hardcoded '1학년'/
+  // '1반' default silently stops matching any submitted data for topics whose
+  // grades/classes don't start there (e.g. a topic offering only 2/3학년),
+  // since the <select> then displays its first option while selectedGrade
+  // internally stays on the stale/invalid value.
+  useEffect(() => {
+    if (currentTopic) {
+      if (!selectedGrade || !currentTopic.grades.includes(selectedGrade)) {
+        setSelectedGrade(currentTopic.grades[0] || '1학년');
+      }
+      if (!selectedClass || !currentTopic.classes.includes(selectedClass)) {
+        setSelectedClass(currentTopic.classes[0] || '1반');
+      }
+    }
+  }, [currentTopic]);
 
   // Current stored evaluations
   const evaluations = useMemo(() => getStoredEvaluations(), []);
