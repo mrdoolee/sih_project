@@ -334,6 +334,8 @@ export default function App() {
   useEffect(() => {
     const params = parseDistributionParams();
     if (params.hasDistributionParams) {
+      const effectiveGasUrl = params.gasUrl || gasConfig.webAppUrl;
+
       if (params.gasUrl && params.gasUrl !== gasConfig.webAppUrl) {
         const newConfig = { ...gasConfig, webAppUrl: params.gasUrl };
         setGASConfig(newConfig);
@@ -349,6 +351,32 @@ export default function App() {
       }
       if (params.classNum) {
         setSelectedClass(params.classNum);
+      }
+
+      // A new device has no localStorage cache, so `topics` still holds the
+      // hardcoded DEFAULT_TOPICS (EXP_01..04) at this point. Without pulling
+      // the teacher's real topics from their sheet, selectedTopicId from the
+      // link won't match anything in `topics` and the app silently falls
+      // back to topics[0] (the old sample EXP_01 experiment).
+      if (effectiveGasUrl) {
+        (async () => {
+          try {
+            const [fetchedTopics, fetchedSettings] = await Promise.all([
+              fetchTopicsFromGAS(effectiveGasUrl),
+              fetchTeacherSettingsFromGAS(effectiveGasUrl)
+            ]);
+            if (fetchedTopics && fetchedTopics.length > 0) {
+              setTopics(fetchedTopics);
+              saveStoredTopics(fetchedTopics);
+            }
+            if (fetchedSettings) {
+              setTeacherSettings(fetchedSettings);
+              saveStoredTeacherSettings(fetchedSettings);
+            }
+          } catch {
+            // best-effort; fall back to cached/default topics on failure
+          }
+        })();
       }
     }
   }, []);
