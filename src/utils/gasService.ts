@@ -1001,7 +1001,7 @@ function doGet(e) {
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport, TrialIndex]
+      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport, TrialIndex, SelectedTrendline]
       if (row[1] == topicId && row[2] == grade && row[3] == classNum) {
         const groupName = String(row[4]);
         const trialIndex = Number(row[14]) || 1;
@@ -1038,7 +1038,8 @@ function doGet(e) {
               errorAnalysis: String(answersMap['q3'] || row[12] || ''),
               answers: answersMap
             },
-            lastSavedAt: String(row[0])
+            lastSavedAt: String(row[0]),
+            selectedTrendline: row[15] ? String(row[15]) : undefined
           };
         }
 
@@ -1400,7 +1401,8 @@ function doPost(e) {
                 sanitizeCell(q2),
                 sanitizeCell(q3),
                 sanitizeCell(fullReportJson),
-                payloadTrial
+                payloadTrial,
+                sanitizeCell(payload.selectedTrendline || '')
               ]);
             }
           });
@@ -1600,12 +1602,12 @@ function ensureDataSheet(ss) {
       '타임스탬프', '주제ID', '학년', '반', '모둠명', '측정차수',
       '독립변인(X)', '종속변인(Y)', '이상치여부', '측정메모',
       '문항1_답변(자료해석)', '문항2_답변(과학원리)', '문항3_답변(오차분석)', '전체_보고서_통합답변',
-      '시행차수'
+      '시행차수', '선택추세선'
     ]);
     sheet.setFrozenRows(1);
-    // Appended as the last column (O) rather than inserted next to 모둠명 so
-    // every other column's index stays the same for existing sheets/scripts.
-    sheet.getRange("A1:O1").setBackground("#fce8e6").setFontWeight("bold");
+    // Appended as the last columns (O, P) rather than inserted next to 모둠명
+    // so every other column's index stays the same for existing sheets/scripts.
+    sheet.getRange("A1:P1").setBackground("#fce8e6").setFontWeight("bold");
   }
 }
 

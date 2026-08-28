@@ -1672,19 +1672,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </div>
             )}
 
-            {/* Tab 5 (All Groups) & Tab 6 (Evaluations) Data Reload */}
-            {(activeTab === 'all_groups' || activeTab === 'evaluations') && onSyncFromGAS && (
-              <button
-                type="button"
-                onClick={onSyncFromGAS}
-                disabled={isSyncing || !gasConfig.webAppUrl}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-                title="스프레드시트에서 최신 학생 측정/평가 데이터를 새로고침합니다."
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>데이터 새로고침</span>
-              </button>
-            )}
           </div>
         </header>
 

@@ -949,7 +949,10 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
               </span>
             </div>
 
-            {/* Custom legend - one badge per group, so it never wraps raggedly */}
+            {/* Custom legend - one badge per group, so it never wraps raggedly.
+                Includes the trendline equation and R² inline so the fit
+                quality is readable straight off the legend, not just from
+                the summary box below the chart. */}
             <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
               {activeGroupMetrics.map((gm) => (
                 <span
@@ -964,6 +967,8 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                     )}
                     )
                   </span>
+                  <span className="font-mono font-semibold text-indigo-700">{gm.trend.equation}</span>
+                  <span className="text-slate-500 font-normal">R²={gm.trend.r2}</span>
                 </span>
               ))}
               {totalOutlierCount > 0 && (
@@ -1093,6 +1098,39 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                 <AlertCircle className="w-8 h-8 mx-auto text-slate-300" />
                 <p className="text-sm font-semibold">제출된 모둠 측정 데이터가 없습니다.</p>
                 <p className="text-xs text-slate-400">학생들이 실험 데이터를 입력하면 실시간으로 차트에 표시됩니다.</p>
+              </div>
+            )}
+
+            {/* Trendline/R² summary box - one card per submitted group, so the
+                fit quality is readable at a glance without hovering the chart. */}
+            {activeGroupMetrics.length > 0 && (
+              <div className="pt-1 border-t border-slate-100">
+                <h4 className="text-xs font-bold text-slate-700 mb-2.5">모둠별 추세선 · R² 요약</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  {activeGroupMetrics.map((gm) => (
+                    <div
+                      key={gm.groupName}
+                      className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 flex flex-col gap-1 text-xs"
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: gm.color }} />
+                        <span className="text-slate-800">{gm.groupName}</span>
+                        <span className="ml-auto text-[10px] font-semibold text-slate-500">{gm.validCount}점</span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 space-y-0.5">
+                        <div>식: <code className="text-indigo-900 font-semibold">{gm.trend.equation}</code></div>
+                        <div>
+                          R²:{' '}
+                          <strong
+                            className={gm.trend.r2 >= 0.95 ? 'text-emerald-700' : 'text-slate-800'}
+                          >
+                            {gm.trend.r2}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
