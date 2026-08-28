@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   TopicConfig,
@@ -163,6 +163,13 @@ export default function App() {
   });
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Background GAS reconciliation (below) fires async and must not clobber
+  // in-progress edits with a slower network response - a ref avoids the
+  // stale-closure trap a plain read of the hasUnsavedChanges state would hit.
+  const hasUnsavedChangesRef = useRef(false);
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -247,6 +254,45 @@ export default function App() {
   useEffect(() => {
     loadActiveGroupData();
   }, [loadActiveGroupData]);
+
+  // loadActiveGroupData above is local-storage-only (fast, no flash of
+  // blank/stale data). But local storage is per-browser: a student who
+  // switches devices, clears their cache, or has stale test data sitting in
+  // this browser from before never sees what's actually on the teacher's
+  // spreadsheet. Reconcile with GAS in the background and only overwrite the
+  // editor if the student hasn't started typing yet, so a slower network
+  // response can't stomp on in-progress work.
+  useEffect(() => {
+    if (!gasConfig.webAppUrl) return;
+    let cancelled = false;
+    (async () => {
+      const freshList = await fetchAllGroupsData(
+        selectedTopicId,
+        selectedGrade,
+        selectedClass,
+        gasConfig.webAppUrl
+      );
+      if (cancelled || hasUnsavedChangesRef.current) return;
+
+      setAllGroupsData(freshList);
+      const latestTrial = getLatestTrialIndex(freshList, selectedGroup);
+      const existing = freshList.find(
+        (item) => item.groupName === selectedGroup && (item.trialIndex || 1) === latestTrial
+      );
+      if (existing && !hasUnsavedChangesRef.current) {
+        setSelectedTrialIndex(latestTrial);
+        setPoints(existing.points || []);
+        setSelectedTrendline(existing.selectedTrendline || currentTopic.defaultTrendline || 'linear');
+        setManualGraphData(existing.manualGraphData);
+        setConclusionNotes(existing.conclusionNotes || { summary: '', principle: '', errorAnalysis: '' });
+        setLastSavedAt(existing.lastSavedAt);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTopicId, selectedGrade, selectedClass, selectedGroup, gasConfig.webAppUrl]);
 
   // Handle Save
   const handleSaveData = async () => {
