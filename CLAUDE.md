@@ -50,14 +50,24 @@ Everything server-side lives in **one file**: `src/utils/gasService.ts`.
 ### Core data model (`src/types.ts`)
 
 - `TopicConfig` — one science experiment topic (X/Y variable names+units, default trendline, target grades/classes/groups). Report questions are dynamic: `reportQuestions?: ReportQuestionConfig[]` overrides the fixed 3-question default; always read questions through `getEffectiveReportQuestions(topic)`, never assume exactly 3.
-- `GroupExperimentData` — one group's submission: `points` (measurements), `manualGraphData` (student's hand-drawn trend line/curve state), `conclusionNotes.answers` (dynamic question-id → answer map, parallel to `reportQuestions`).
-- `GroupEvaluation` — teacher grading: free-text score/feedback plus a fixed 5-item `rubricScores` (accuracy, graphInterpretation, scientificReasoning, errorAnalysis, attitude), each 1–5.
+- `GroupExperimentData` — one group's submission: `points` (measurements), `manualGraphData` (student's hand-drawn trend line/curve state), `conclusionNotes.answers` (dynamic question-id → answer map, parallel to `reportQuestions`), `trialIndex?: number` (which repeated attempt — 1차, 2차... — this record is; missing/undefined means 1). A group's per-class array (both the localStorage map and the GAS sheet) can hold multiple `GroupExperimentData` records for the same group, one per trial — see "Repeated trials" below.
+- `GroupEvaluation` — teacher grading: free-text score/feedback plus a fixed 5-item `rubricScores` (accuracy, graphInterpretation, scientificReasoning, errorAnalysis, attitude), each 1–5. One evaluation per group, not per trial — grading is deliberately trial-independent even though the measurements/report shown alongside it switch per trial.
+
+### Repeated trials (1차, 2차...)
+
+A group can submit the same experiment multiple times without overwriting the previous attempt. This is threaded through as `trialIndex` on `GroupExperimentData`, not a separate data structure:
+
+- Records for the same group are matched/upserted by `(groupName, trialIndex)`, not `groupName` alone — both in `gasService.ts`'s local `saveGroupData` upsert and in the GAS template's `saveGroupData`/`getAllGroupData` handlers (sheet column `시행차수`, appended as the last column so existing column indices don't shift).
+- `getGroupTrials()`/`getLatestTrialIndex()` in `gasService.ts` are the shared helpers for "every trial this group has" / "the highest trial number saved so far" — reuse these rather than re-deriving trial lists inline (menu5/menu6 and `App.tsx` all do).
+- **Read `getStoredAllGroupData()` fresh (synchronous localStorage read) when you need an up-to-date trial count right after a save, not the `allGroupsData` React state.** `saveGroupData()` writes to localStorage synchronously but the state only catches up via a separate, sometimes network-bound refetch — code that computes "next trial number" from the stale state can silently under-count and re-use a trial index that's already taken (see `applyStartNewTrial` in `App.tsx` for the pattern).
+- UI-side: `Header.tsx` renders the trial switcher unconditionally (not conditionally mounted on trial count) to avoid layout jank; `ManualGraphCanvas.tsx`'s resync effect includes `trialIndex` in its dependency array so switching trials reloads the hand-drawn canvas state too.
 
 ### Analysis and rendering utilities
 
 - `src/utils/mathAnalysis.ts` — pure regression functions per trendline type (`calculateLinear`, `calculateProportional`, `calculateInverse`, `calculateQuadratic`) dispatched via `computeTrendline(type, points)`, plus `generateScientificInsight()` for the auto-generated interpretation text. No side effects, safe to unit-test in isolation if you add a test runner.
 - `src/utils/distributionHelper.ts` — encodes/decodes the student-facing distribution link (topic/grade/class/GAS URL packed into query params) used by the QR/link sharing flow.
 - `src/components/ManualGraphCanvas.tsx` — the student's hand-drawn graphing canvas (point-plot / straight-line / quadratic-curve / freehand modes). Has had real infinite-render-loop bugs before from recreating objects referenced by effect dependencies each render — if you touch this file's `useEffect`/`useCallback` deps, verify in a browser, not just via `tsc`.
+- `src/components/ConfirmModal.tsx` — the app's only confirmation-dialog pattern; use it instead of `window.confirm()`/`alert()` for any "are you sure" gate. A native `window.confirm()` blocks the tab's JS thread while open, which is bad for any embedded/automated context and has caused real regressions here before.
 - `src/components/TeacherDashboard.tsx` is large (3000+ lines) and holds all six teacher console tabs (GAS 연동, 기능제어/환경설정, 탐구주제/모둠관리, 학생 배부 링크 & QR, 전체 모둠 탐구 결과 확인, 모둠별 탐구 결과 확인 & 평가) in one component tree — search within the file for the relevant tab's JSX rather than assuming feature-based file boundaries.
 
 ### Path alias
