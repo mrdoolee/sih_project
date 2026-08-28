@@ -10,9 +10,11 @@ import {
   getStoredTeacherSettings,
   saveStoredTeacherSettings,
   fetchTopicsFromGAS,
-  fetchTeacherSettingsFromGAS
+  fetchTeacherSettingsFromGAS,
+  fetchAllGroupsData,
+  getFlattenedAllGroupsData
 } from './utils/gasService';
-import { GASConfig, TopicConfig, TeacherSettingsConfig } from './types';
+import { GASConfig, TopicConfig, TeacherSettingsConfig, GroupExperimentData } from './types';
 
 // See main.tsx for why this is needed - avoids the iOS Safari "first tap only
 // triggers :hover" quirk on hover-styled buttons for teachers on tablet/phone.
@@ -23,6 +25,8 @@ const TeacherStandaloneApp: React.FC = () => {
   const [topics, setTopics] = useState<TopicConfig[]>(getStoredTopics());
   const [teacherSettings, setTeacherSettings] = useState<TeacherSettingsConfig>(getStoredTeacherSettings());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [allGroupsData, setAllGroupsData] = useState<GroupExperimentData[]>(() => getFlattenedAllGroupsData());
+  const [isRefreshingGroups, setIsRefreshingGroups] = useState<boolean>(false);
 
   useEffect(() => {
     // Listen for storage events in case settings are changed in another tab
@@ -77,6 +81,21 @@ const TeacherStandaloneApp: React.FC = () => {
     }
   };
 
+  // Pulls fresh measurement/report data for one topic/grade/class combo from
+  // the teacher's spreadsheet. Tabs 5/6 (전체 모둠 결과, 모둠별 평가) otherwise
+  // only ever see whatever was last cached in this browser's localStorage,
+  // since nothing here fetched from GAS for them before.
+  const handleRefreshGroupData = async (topicId: string, grade: string, classNum: string) => {
+    if (!gasConfig.webAppUrl) return;
+    setIsRefreshingGroups(true);
+    try {
+      await fetchAllGroupsData(topicId, grade, classNum, gasConfig.webAppUrl);
+      setAllGroupsData(getFlattenedAllGroupsData());
+    } finally {
+      setIsRefreshingGroups(false);
+    }
+  };
+
   return (
     <TeacherDashboard
       gasConfig={gasConfig}
@@ -87,6 +106,9 @@ const TeacherStandaloneApp: React.FC = () => {
       onSaveTeacherSettings={handleSaveTeacherSettings}
       onSyncFromGAS={handleSyncFromGAS}
       isSyncing={isSyncing}
+      allGroupsData={allGroupsData}
+      onRefreshGroupData={handleRefreshGroupData}
+      isRefreshingGroups={isRefreshingGroups}
       onBackToStudent={() => {
         window.location.href = './index.html';
       }}

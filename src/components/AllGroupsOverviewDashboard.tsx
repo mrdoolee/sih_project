@@ -42,7 +42,7 @@ interface AllGroupsOverviewDashboardProps {
   topics: TopicConfig[];
   allGroupsData: GroupExperimentData[];
   gasWebAppUrl: string;
-  onRefreshData?: () => void;
+  onRefreshData?: (topicId: string, grade: string, classNum: string) => Promise<void>;
   isLoading?: boolean;
   onSelectGroupForDetail?: (topicId: string, grade: string, classNum: string, groupName: string) => void;
 }
@@ -350,6 +350,18 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
 
         {/* Actions below description */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            id="btn-all-groups-refresh"
+            onClick={() => onRefreshData?.(selectedTopicId, selectedGrade, selectedClass)}
+            disabled={isLoading || !gasWebAppUrl}
+            title={gasWebAppUrl ? '구글 스프레드시트에서 이 학년/반의 최신 제출 데이터를 다시 불러옵니다.' : 'GAS 연동 URL이 설정되어 있지 않습니다.'}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>{isLoading ? '불러오는 중...' : '새로고침'}</span>
+          </button>
+
           <button
             type="button"
             id="btn-all-groups-csv"

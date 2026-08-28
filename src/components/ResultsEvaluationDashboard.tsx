@@ -53,7 +53,7 @@ interface ResultsEvaluationDashboardProps {
   allGroupsData: GroupExperimentData[];
   gasWebAppUrl: string;
   teacherPassword?: string;
-  onRefreshData?: () => void;
+  onRefreshData?: (topicId: string, grade: string, classNum: string) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -188,15 +188,15 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
     if (!gasWebAppUrl || !gasWebAppUrl.startsWith('http')) return;
     setIsFetchingGAS(true);
     try {
-      const fetched = await fetchEvaluationsFromGAS(gasWebAppUrl);
+      const [fetched] = await Promise.all([
+        fetchEvaluationsFromGAS(gasWebAppUrl),
+        onRefreshData ? onRefreshData(selectedTopicId, selectedGrade, selectedClass) : Promise.resolve()
+      ]);
       if (fetched) {
         setEvaluations(fetched);
-        setSaveMessage({ type: 'success', text: '스프레드시트에서 최신 평가 데이터를 성공적으로 불러왔습니다.' });
-        setTimeout(() => setSaveMessage(null), 3000);
       }
-      if (onRefreshData) {
-        onRefreshData();
-      }
+      setSaveMessage({ type: 'success', text: '스프레드시트에서 최신 측정 데이터와 평가 데이터를 성공적으로 불러왔습니다.' });
+      setTimeout(() => setSaveMessage(null), 3000);
     } catch {
       setSaveMessage({ type: 'error', text: '평가 데이터 불러오기 중 오류가 발생했습니다.' });
       setTimeout(() => setSaveMessage(null), 3000);
@@ -463,6 +463,18 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="btn-evaluations-refresh"
+              onClick={handleRequestManualFetchEvaluations}
+              disabled={isFetchingGAS || !gasWebAppUrl || !gasWebAppUrl.startsWith('http')}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="구글 스프레드시트에서 이 학년/반의 최신 측정 데이터와 평가를 다시 불러옵니다."
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingGAS ? 'animate-spin' : ''}`} />
+              <span>{isFetchingGAS ? '불러오는 중...' : '새로고침'}</span>
+            </button>
+
             <button
               type="button"
               onClick={handlePrintClassSummary}

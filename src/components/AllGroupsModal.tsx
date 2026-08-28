@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   BarChart3,
@@ -65,6 +65,35 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'chart' | 'table'>('chart');
   const [visibleGroups, setVisibleGroups] = useState<Record<string, boolean>>({});
 
+  // Which repeated trial (1차, 2차...) is being compared across groups. Every
+  // group can submit multiple trials, so without this the modal used to pick
+  // whichever trial record happened to come first per group (via .find()),
+  // mixing mismatched trials together and silently dropping groups whose
+  // only data lives in a later trial.
+  const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
+
+  const availableTrialIndices = useMemo(() => {
+    const set = new Set<number>();
+    allGroupsData.forEach((d) => set.add(d.trialIndex || 1));
+    if (set.size === 0) set.add(1);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [allGroupsData]);
+
+  // Default to the latest trial whenever the modal is opened for a new class,
+  // and self-correct if the currently selected trial no longer exists.
+  useEffect(() => {
+    setSelectedTrialIndex((prev) =>
+      availableTrialIndices.includes(prev)
+        ? prev
+        : availableTrialIndices[availableTrialIndices.length - 1] || 1
+    );
+  }, [availableTrialIndices]);
+
+  // Only the selected trial's records feed every group lookup below.
+  const trialGroupsData = useMemo(() => {
+    return allGroupsData.filter((d) => (d.trialIndex || 1) === selectedTrialIndex);
+  }, [allGroupsData, selectedTrialIndex]);
+
   // Get distinct group names from topic or existing data
   const groupNames = useMemo(() => {
     const list = new Set<string>();
@@ -85,7 +114,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
   // Compute trendline and metrics for each group
   const groupMetrics = useMemo(() => {
     return groupNames.map((gName) => {
-      const gData = allGroupsData.find((d) => d.groupName === gName);
+      const gData = trialGroupsData.find((d) => d.groupName === gName);
       const points = gData?.points || [];
       const valid = filterValidPoints(points);
       const trendType: TrendlineType = gData?.selectedTrendline || topic.defaultTrendline || 'linear';
@@ -102,7 +131,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
         lastSavedAt: gData?.lastSavedAt
       };
     });
-  }, [groupNames, allGroupsData, topic]);
+  }, [groupNames, trialGroupsData, topic]);
 
   // Raw X/Y matrix: one row per measurement index, two columns per group.
   const measurementMatrix = useMemo(() => {
@@ -259,6 +288,27 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
               <span>모둠별 통계 비교표</span>
             </button>
           </div>
+
+          {/* Trial (회차) Selector - each group can submit multiple repeated
+              attempts; this picks which one every group's data below is
+              read from. */}
+          {availableTrialIndices.length > 1 && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-500" />
+              <span>시행 회차:</span>
+              <select
+                value={selectedTrialIndex}
+                onChange={(e) => setSelectedTrialIndex(Number(e.target.value))}
+                className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                {availableTrialIndices.map((t) => (
+                  <option key={t} value={t}>
+                    {t}차 시행
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Quick Metrics */}
           <div className="flex items-center gap-3 text-xs">

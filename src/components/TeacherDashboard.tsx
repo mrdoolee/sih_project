@@ -91,6 +91,12 @@ interface TeacherDashboardProps {
   isSyncing: boolean;
   onBackToStudent?: () => void;
   allGroupsData?: GroupExperimentData[];
+  // Pulls fresh measurement data for one topic/grade/class combo from the
+  // teacher's spreadsheet. Separate from onSyncFromGAS, which only syncs
+  // topics/settings - without this, tabs 5/6 could never see new student
+  // submissions after the initial page load.
+  onRefreshGroupData?: (topicId: string, grade: string, classNum: string) => Promise<void>;
+  isRefreshingGroups?: boolean;
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
@@ -103,7 +109,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onSyncFromGAS,
   isSyncing,
   onBackToStudent,
-  allGroupsData
+  allGroupsData,
+  onRefreshGroupData,
+  isRefreshingGroups
 }) => {
   // Password lock state (session-persisted)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -3187,8 +3195,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             topics={topics}
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}
-            onRefreshData={onSyncFromGAS}
-            isLoading={isSyncing}
+            onRefreshData={onRefreshGroupData}
+            isLoading={isRefreshingGroups}
           />
         )}
 
@@ -3199,8 +3207,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}
             teacherPassword={teacherSettings.teacherPassword}
-            onRefreshData={onSyncFromGAS}
-            isLoading={isSyncing}
+            onRefreshData={onRefreshGroupData}
+            isLoading={isRefreshingGroups}
           />
         )}
           </div>

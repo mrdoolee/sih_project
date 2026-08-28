@@ -22,6 +22,7 @@ import {
   getLatestTrialIndex,
   saveGroupData,
   fetchAllGroupsData,
+  getFlattenedAllGroupsData,
   fetchTopicsFromGAS,
   fetchTeacherSettingsFromGAS
 } from './utils/gasService';
@@ -139,6 +140,12 @@ export default function App() {
 
   // All groups dataset for current Topic + Grade + Class
   const [allGroupsData, setAllGroupsData] = useState<GroupExperimentData[]>([]);
+
+  // Separate dataset for the embedded Teacher Dashboard's tabs 5/6 (전체 모둠
+  // 결과, 모둠별 평가), which let the teacher browse ANY topic/grade/class, not
+  // just the one currently selected in the student flow above.
+  const [teacherAllGroupsData, setTeacherAllGroupsData] = useState<GroupExperimentData[]>(() => getFlattenedAllGroupsData());
+  const [isRefreshingTeacherGroups, setIsRefreshingTeacherGroups] = useState(false);
 
   // Which repeated trial (1차, 2차...) of the current group is loaded in the editor.
   const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
@@ -327,6 +334,21 @@ export default function App() {
       return false;
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Pulls fresh measurement/report data for one topic/grade/class combo from
+  // GAS for the embedded Teacher Dashboard's tabs 5/6 - separate from
+  // handleSyncFromGAS above, which only syncs topics/settings, not
+  // student-submitted data.
+  const handleRefreshTeacherGroupData = async (topicId: string, grade: string, classNum: string) => {
+    if (!gasConfig.webAppUrl) return;
+    setIsRefreshingTeacherGroups(true);
+    try {
+      await fetchAllGroupsData(topicId, grade, classNum, gasConfig.webAppUrl);
+      setTeacherAllGroupsData(getFlattenedAllGroupsData());
+    } finally {
+      setIsRefreshingTeacherGroups(false);
     }
   };
 
@@ -558,6 +580,9 @@ export default function App() {
         }}
         onSyncFromGAS={handleSyncFromGAS}
         isSyncing={isSyncing}
+        allGroupsData={teacherAllGroupsData}
+        onRefreshGroupData={handleRefreshTeacherGroupData}
+        isRefreshingGroups={isRefreshingTeacherGroups}
         onBackToStudent={() => {
           setCurrentPage('student');
           window.history.replaceState({}, '', `${window.location.pathname}?mode=student`);
