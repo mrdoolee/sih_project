@@ -1167,14 +1167,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* Top Minimal Bar */}
         <header className="px-6 py-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Lock className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shrink-0">
+              <FlaskConical className="w-5 h-5" />
             </div>
             <div>
               <h1 className="text-sm sm:text-base font-bold text-white tracking-tight">
-                교사용 관리 콘솔 (보안 잠금)
+                과학 탐구 활동 보고서 작성 도우미
               </h1>
-              <p className="text-xs text-slate-400">교사 인증이 필요합니다.</p>
+              <p className="text-xs text-slate-400 flex items-center gap-1">
+                <Lock className="w-3 h-3" />
+                <span>교사용 관리 콘솔 · 인증이 필요합니다</span>
+              </p>
             </div>
           </div>
 
@@ -1271,9 +1274,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </main>
 
-        <footer className="py-4 text-center text-xs text-slate-600 border-t border-slate-800">
-          과학 탐구 데이터 도우미 · 교사 보안 접근 제어 시스템
-        </footer>
+        <div className="border-t border-slate-800">
+          <CreditFooter variant="dark" singleLine />
+        </div>
       </div>
     );
   }
