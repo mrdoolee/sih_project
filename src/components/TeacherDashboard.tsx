@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Settings,
   ShieldCheck,
@@ -19,7 +19,6 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  Save,
   AlertCircle,
   Send,
   Table,
@@ -380,47 +379,55 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // The old flow required an explicit "저장 & 스프레드시트 연동" button, but that
+  // button never actually pushed to GAS - it only applied the change locally,
+  // so clicking it looked broken (the sheet was untouched until someone later
+  // remembered to hit the separate header export button). Now typing a valid
+  // new password applies it locally as-you-type and marks 'settings' pending,
+  // the same as every other menu2 toggle - actually reaching the spreadsheet
+  // still happens through the shared header's [저장 필요]/[시트로 내보내기(저장하기)]
+  // button, so there's exactly one way to sync, not two that disagree.
+  useEffect(() => {
+    if (!currentPwInput && !newPwInput && !confirmPwInput) {
+      setPwChangeStatus(null);
+      return;
+    }
+    // Wait until all three fields have something before judging correctness -
+    // otherwise every keystroke on an earlier field flashes a premature error.
+    if (!confirmPwInput) return;
+
     const currentCorrect = teacherSettings.teacherPassword || '0000';
     if (currentPwInput.trim() !== currentCorrect.trim()) {
-      setPwChangeStatus({
-        type: 'error',
-        message: '현재 비밀번호가 올바르지 않습니다.'
-      });
+      setPwChangeStatus({ type: 'error', message: '현재 비밀번호가 올바르지 않습니다.' });
       return;
     }
     if (!newPwInput.trim() || newPwInput.trim().length < 4) {
-      setPwChangeStatus({
-        type: 'error',
-        message: '새 비밀번호는 4자리 이상 입력해주세요.'
-      });
+      setPwChangeStatus({ type: 'error', message: '새 비밀번호는 4자리 이상 입력해주세요.' });
       return;
     }
     if (newPwInput.trim() !== confirmPwInput.trim()) {
-      setPwChangeStatus({
-        type: 'error',
-        message: '새 비밀번호와 비밀번호 확인이 일치하지 않습니다.'
-      });
+      setPwChangeStatus({ type: 'error', message: '새 비밀번호와 비밀번호 확인이 일치하지 않습니다.' });
       return;
     }
 
-    const updated: TeacherSettingsConfig = {
-      ...teacherSettings,
-      teacherPassword: newPwInput.trim()
-    };
-    onSaveTeacherSettings(updated);
-
-    setCurrentPwInput('');
-    setNewPwInput('');
-    setConfirmPwInput('');
-    markPending('settings');
+    if (newPwInput.trim() !== currentCorrect.trim()) {
+      const updated: TeacherSettingsConfig = {
+        ...teacherSettings,
+        teacherPassword: newPwInput.trim()
+      };
+      onSaveTeacherSettings(updated);
+      markPending('settings');
+    }
     setPwChangeStatus({
       type: 'success',
-      message: '교사 비밀번호가 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
+      message: '새 비밀번호가 적용되었습니다. 상단의 [저장 필요] 표시에서 [시트로 내보내기(저장하기)]를 눌러 완료하세요.'
     });
-    setTimeout(() => setPwChangeStatus(null), 4000);
-  };
+    // Deliberately keyed only on the three input fields, not on teacherSettings -
+    // applying the change above updates teacherSettings, which would otherwise
+    // immediately re-run this effect and compare the (now stale) currentPwInput
+    // against the brand-new password and flash a false "current password wrong".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPwInput, newPwInput, confirmPwInput]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(gasCode);
@@ -2025,7 +2032,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
               </div>
 
-              <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -2077,15 +2084,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     />
                     <span>비밀번호 문자 표시하기</span>
                   </label>
-
-                  <button
-                    type="submit"
-                    id="btn-save-new-password"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>비밀번호 저장 & 스프레드시트 연동</span>
-                  </button>
                 </div>
 
                 {pwChangeStatus && (
@@ -2096,7 +2094,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <span>{pwChangeStatus.message}</span>
                   </div>
                 )}
-              </form>
+              </div>
             </div>
 
             {/* Visual Guide: Spreadsheet [환경설정] Tab Structure */}
