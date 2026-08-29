@@ -151,21 +151,42 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
   // its defaults (set right after restoring saved line/curve positions for a group).
   const skipNextBoundsResetRef = useRef(false);
 
-  // Sync external manualGraphData updates (e.g. when group changes)
+  // Sync external manualGraphData updates (e.g. group/trial changes). Every
+  // field is set unconditionally (falling back to its blank default) rather
+  // than only when present on the incoming data - a group/trial switch to a
+  // record that never plotted points (or has no manualGraphData at all, e.g.
+  // a freshly started trial) used to leave the PREVIOUS trial's points/line/
+  // curve/freehand strokes sitting in local state, since each setter was
+  // gated on that one field being truthy on the new record.
   useEffect(() => {
-    let hasRestoredPositions = false;
-    if (manualGraphData) {
-      if (manualGraphData.studentPoints) setStudentPoints(manualGraphData.studentPoints);
-      if (manualGraphData.toolMode) setToolMode(manualGraphData.toolMode);
-      if (typeof manualGraphData.lineOriginFixed === 'boolean') setLineOriginFixed(manualGraphData.lineOriginFixed);
-      if (manualGraphData.linePoint1) { setLinePoint1(manualGraphData.linePoint1); hasRestoredPositions = true; }
-      if (manualGraphData.linePoint2) { setLinePoint2(manualGraphData.linePoint2); hasRestoredPositions = true; }
-      if (manualGraphData.curveP1) { setCurveP1(manualGraphData.curveP1); hasRestoredPositions = true; }
-      if (manualGraphData.curveP2) { setCurveP2(manualGraphData.curveP2); hasRestoredPositions = true; }
-      if (manualGraphData.curveP3) { setCurveP3(manualGraphData.curveP3); hasRestoredPositions = true; }
-      if (manualGraphData.freehandPaths) setFreehandPaths(manualGraphData.freehandPaths);
-      if (typeof manualGraphData.hasAdjustedRuler === 'boolean') setHasAdjustedRuler(manualGraphData.hasAdjustedRuler);
-    }
+    const hasRestoredPositions = !!(
+      manualGraphData?.linePoint1 ||
+      manualGraphData?.linePoint2 ||
+      manualGraphData?.curveP1 ||
+      manualGraphData?.curveP2 ||
+      manualGraphData?.curveP3
+    );
+
+    setStudentPoints(manualGraphData?.studentPoints || []);
+    setToolMode(manualGraphData?.toolMode || 'plot');
+    setLineOriginFixed(
+      typeof manualGraphData?.lineOriginFixed === 'boolean'
+        ? manualGraphData.lineOriginFixed
+        : topic.defaultTrendline === 'proportional'
+    );
+    setLinePoint1(manualGraphData?.linePoint1 || { x: 0, y: 0 });
+    setLinePoint2(manualGraphData?.linePoint2 || { x: 3, y: 5 });
+    setCurveP1(manualGraphData?.curveP1 || { x: 0, y: 0 });
+    setCurveP2(manualGraphData?.curveP2 || { x: 2, y: 4 });
+    setCurveP3(manualGraphData?.curveP3 || { x: 4, y: 0 });
+    setFreehandPaths(manualGraphData?.freehandPaths || []);
+    setHasAdjustedRuler(
+      typeof manualGraphData?.hasAdjustedRuler === 'boolean' ? manualGraphData.hasAdjustedRuler : false
+    );
+    setSelectedPointId(null);
+    setIsFreehandDrawing(false);
+    setCurrentStroke([]);
+
     // Tell the bounds-based default-position effect (below) to skip its very next run,
     // since we just restored real saved line/curve positions for this group and it
     // would otherwise immediately stomp them back to computed defaults.
@@ -921,8 +942,13 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
         </div>
       </div>
 
-      {/* Target Points Check Status Bar */}
-      <div className="bg-slate-100/80 px-3.5 py-1.5 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs gap-2">
+      {/* Target Points Check Status Bar - guidance text kept on its own row
+          (never sharing a flex line with the point chips) so a longer message
+          in one tool mode can't wrap onto a second line and change this bar's
+          total height. That height feeds the canvas's ResizeObserver below,
+          so any change here visibly shifted/jumped the whole drawn graph on
+          every tool-mode switch. */}
+      <div className="bg-slate-100/80 px-3.5 py-1.5 border-b border-slate-200 text-xs space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-semibold text-slate-600">찍어야 할 측정점:</span>
           {validPoints.length === 0 ? (
@@ -947,8 +973,8 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
           )}
         </div>
 
-        {/* Hover Coordinate or Mode Guidance or Flash Notice */}
-        <div className="flex items-center gap-2">
+        {/* Hover Coordinate or Mode Guidance or Flash Notice - fixed-height row */}
+        <div className="flex items-center gap-2 min-h-[20px]">
           {flashNotice ? (
             <span className="font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-300 text-xs shadow-2xs animate-fade-in">
               {flashNotice}

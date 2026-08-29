@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Settings,
   ShieldCheck,
@@ -76,8 +76,8 @@ import {
 } from '../utils/gasService';
 import { GroupPasswordPrintModal } from './GroupPasswordPrintModal';
 import { ClassroomShareModal } from './ClassroomShareModal';
-import { ResultsEvaluationDashboard } from './ResultsEvaluationDashboard';
-import { AllGroupsOverviewDashboard } from './AllGroupsOverviewDashboard';
+import { ResultsEvaluationDashboard, ResultsEvaluationDashboardHandle } from './ResultsEvaluationDashboard';
+import { AllGroupsOverviewDashboard, AllGroupsOverviewDashboardHandle } from './AllGroupsOverviewDashboard';
 import { StudentShareLayer } from './StudentShareLayer';
 
 interface TeacherDashboardProps {
@@ -134,6 +134,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // 기본 설정 메뉴: 1. GAS연동 ('gas'), 2. 기능제어/환경설정 ('permissions'), 3. 탐구주제/모둠관리 ('topics'), 4. 학생 배부 링크 & QR 생성 ('share')
   // 탐구 결과 확인 메뉴: 5. 전체 모둠 탐구 결과 확인 ('all_groups'), 6. 모둠별 탐구 결과 확인 & 평가 ('evaluations')
   const [activeTab, setActiveTab] = useState<'gas' | 'permissions' | 'topics' | 'share' | 'all_groups' | 'evaluations'>('gas');
+  // Menu5/6 each own their filter state (topic/grade/class), so the refresh
+  // action stays inside those components - the shared header button here just
+  // triggers it via ref instead of duplicating that state up in this component.
+  const allGroupsRef = useRef<AllGroupsOverviewDashboardHandle>(null);
+  const evaluationsRef = useRef<ResultsEvaluationDashboardHandle>(null);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [topicsSubTab, setTopicsSubTab] = useState<'topicsList' | 'passwords'>('topicsList');
 
@@ -1631,7 +1636,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   title="현재 설정을 스프레드시트 [환경설정] 탭으로 내보냅니다."
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>시트로 내보내기</span>
+                  <span>시트로 내보내기(저장하기)</span>
                 </button>
               </div>
             )}
@@ -1659,7 +1664,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       title="현재 주제 목록을 스프레드시트 [환경설정_주제목록] 탭으로 내보냅니다."
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>주제 내보내기</span>
+                      <span>주제 내보내기(저장하기)</span>
                     </button>
                   </>
                 ) : (
@@ -1687,6 +1692,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </>
                 )}
               </div>
+            )}
+
+            {/* Tab 5: All Groups Overview - Refresh (data/filters live in the tab itself) */}
+            {activeTab === 'all_groups' && (
+              <button
+                type="button"
+                onClick={() => allGroupsRef.current?.refresh()}
+                disabled={isRefreshingGroups || !gasConfig.webAppUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                title={gasConfig.webAppUrl ? '구글 스프레드시트에서 이 학년/반의 최신 제출 데이터를 다시 불러옵니다.' : 'GAS 연동 URL이 설정되어 있지 않습니다.'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingGroups ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingGroups ? '불러오는 중...' : '새로고침'}</span>
+              </button>
+            )}
+
+            {/* Tab 6: Evaluations - Refresh (data/filters live in the tab itself) */}
+            {activeTab === 'evaluations' && (
+              <button
+                type="button"
+                onClick={() => evaluationsRef.current?.refresh()}
+                disabled={isRefreshingGroups || !gasConfig.webAppUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                title="구글 스프레드시트에서 이 학년/반의 최신 측정 데이터와 평가를 다시 불러옵니다."
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingGroups ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingGroups ? '불러오는 중...' : '새로고침'}</span>
+              </button>
             )}
 
           </div>
@@ -3253,6 +3286,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* TAB 5: ALL GROUPS OVERVIEW DASHBOARD */}
         {activeTab === 'all_groups' && (
           <AllGroupsOverviewDashboard
+            ref={allGroupsRef}
             topics={topics}
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}
@@ -3264,6 +3298,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* TAB 6: RESULTS EVALUATION & RUBRIC DASHBOARD */}
         {activeTab === 'evaluations' && (
           <ResultsEvaluationDashboard
+            ref={evaluationsRef}
             topics={topics}
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}

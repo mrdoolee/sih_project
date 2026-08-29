@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { ConfirmModal, ConfirmVariant, ConfirmIconType } from './ConfirmModal';
 import {
   TopicConfig,
@@ -57,6 +57,12 @@ interface ResultsEvaluationDashboardProps {
   isLoading?: boolean;
 }
 
+// Exposed to TeacherDashboard so its shared header can trigger this tab's
+// refresh (which also opens the confirm dialog this component already had).
+export interface ResultsEvaluationDashboardHandle {
+  refresh: () => void;
+}
+
 const GRADE_OPTIONS = ['A+', 'A', 'B', 'C', '재시도(R)'];
 
 /**
@@ -87,14 +93,14 @@ function formatSubmittedAt(raw?: string): string {
   });
 }
 
-export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProps> = ({
+export const ResultsEvaluationDashboard = forwardRef<ResultsEvaluationDashboardHandle, ResultsEvaluationDashboardProps>(({
   topics,
   allGroupsData,
   gasWebAppUrl,
   teacherPassword,
   onRefreshData,
   isLoading
-}) => {
+}, ref) => {
   const [selectedTopicId, setSelectedTopicId] = useState<string>(topics[0]?.topicId || 'EXP_01');
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -168,6 +174,10 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
   };
 
   const [isFetchingGAS, setIsFetchingGAS] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    refresh: () => handleRequestManualFetchEvaluations()
+  }));
 
   const handleRequestManualFetchEvaluations = () => {
     openConfirm({
@@ -489,18 +499,6 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
           <div className="flex items-center gap-2">
             <button
               type="button"
-              id="btn-evaluations-refresh"
-              onClick={handleRequestManualFetchEvaluations}
-              disabled={isFetchingGAS || !gasWebAppUrl || !gasWebAppUrl.startsWith('http')}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="구글 스프레드시트에서 이 학년/반의 최신 측정 데이터와 평가를 다시 불러옵니다."
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingGAS ? 'animate-spin' : ''}`} />
-              <span>{isFetchingGAS ? '불러오는 중...' : '새로고침'}</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handlePrintClassSummary}
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
               title="학급 전체 모둠 제출현황 및 평가 취합표 인쇄"
@@ -702,19 +700,27 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
 
           {/* 1. Graph Visualizer */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <TrendingUp className="w-4 h-4 text-indigo-600" />
                 <span>모둠 실험 데이터 그래프 & 추세선</span>
               </h4>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {regressionResult && (
-                  <div className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-semibold">
-                    계산된 추세선: y = {regressionResult.slope}x {regressionResult.intercept >= 0 ? `+ ${regressionResult.intercept}` : `- ${Math.abs(regressionResult.intercept)}`} (R²={regressionResult.r2})
-                  </div>
-                )}
-                <div className="text-[11px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold">
-                  직접 그린 추세선: {drawnTrend ? `${drawnTrend.equation} (R²=${drawnTrend.r2})` : '없음 (학생이 직선/곡선 자를 맞추지 않음)'}
+              <div className="flex flex-wrap gap-1.5">
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50 pl-2 pr-2.5 py-1 rounded-lg border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="font-bold shrink-0">계산된 추세선</span>
+                  <span className="font-mono font-semibold">
+                    {regressionResult
+                      ? `y = ${regressionResult.slope}x ${regressionResult.intercept >= 0 ? `+ ${regressionResult.intercept}` : `- ${Math.abs(regressionResult.intercept)}`} (R²=${regressionResult.r2})`
+                      : '데이터 부족'}
+                  </span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 pl-2 pr-2.5 py-1 rounded-lg border border-amber-200">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                  <span className="font-bold shrink-0">직접 그린 추세선</span>
+                  <span className="font-mono font-semibold">
+                    {drawnTrend ? `${drawnTrend.equation} (R²=${drawnTrend.r2})` : '미작성'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1245,8 +1251,11 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
               <p className="mt-1"><strong>• 시행 회차:</strong> {selectedTrialIndex}차{(trialCountByGroup[selectedGroupName] || 0) > 1 ? ` (전체 ${trialCountByGroup[selectedGroupName]}회 시행 중)` : ''}</p>
               <p className="mt-1"><strong>• 측정 데이터 수:</strong> {currentGroupData?.points?.length || 0}건</p>
               {regressionResult && (
-                <p className="mt-1"><strong>• 도출 수식:</strong> y = {regressionResult.slope}x + {regressionResult.intercept} (R²={regressionResult.r2})</p>
+                <p className="mt-1"><strong>• 계산된 추세선:</strong> y = {regressionResult.slope}x + {regressionResult.intercept} (R²={regressionResult.r2})</p>
               )}
+              <p className="mt-1">
+                <strong>• 직접 그린 추세선:</strong> {drawnTrend ? `${drawnTrend.equation} (R²=${drawnTrend.r2})` : '미작성'}
+              </p>
             </div>
             <div>
               <p><strong>• 종합 평가 등급:</strong> <span className="text-base font-bold text-indigo-700">{formScore}</span></p>
@@ -1423,4 +1432,4 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
       />
     </div>
   );
-};
+});

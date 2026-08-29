@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   TopicConfig,
   GroupExperimentData,
@@ -13,7 +13,6 @@ import {
   BarChart3,
   Download,
   Printer,
-  RefreshCw,
   TrendingUp,
   CheckCircle2,
   AlertCircle,
@@ -36,7 +35,7 @@ import {
   ReferenceLine,
   Line
 } from 'recharts';
-import { filterValidPoints, computeTrendline } from '../utils/mathAnalysis';
+import { filterValidPoints, computeTrendline, computeStudentDrawnTrend } from '../utils/mathAnalysis';
 
 interface AllGroupsOverviewDashboardProps {
   topics: TopicConfig[];
@@ -45,6 +44,14 @@ interface AllGroupsOverviewDashboardProps {
   onRefreshData?: (topicId: string, grade: string, classNum: string) => Promise<void>;
   isLoading?: boolean;
   onSelectGroupForDetail?: (topicId: string, grade: string, classNum: string, groupName: string) => void;
+}
+
+// Exposed to TeacherDashboard so its shared header can trigger this tab's
+// refresh - the refresh needs this component's own selected topic/grade/class
+// filter state, so the button itself moved up to the header but the action
+// stays here.
+export interface AllGroupsOverviewDashboardHandle {
+  refresh: () => void;
 }
 
 const GROUP_COLORS: Record<string, string> = {
@@ -60,14 +67,14 @@ const GROUP_COLORS: Record<string, string> = {
 
 const COLOR_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
 
-export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProps> = ({
+export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardHandle, AllGroupsOverviewDashboardProps>(({
   topics,
   allGroupsData,
   gasWebAppUrl,
   onRefreshData,
   isLoading,
   onSelectGroupForDetail
-}) => {
+}, ref) => {
   const [selectedTopicId, setSelectedTopicId] = useState<string>(topics[0]?.topicId || 'EXP_01');
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -75,6 +82,10 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
   const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
   const [viewMode, setViewMode] = useState<'table' | 'matrix' | 'chart' | 'qa'>('table');
   const [searchFilter, setSearchFilter] = useState('');
+
+  useImperativeHandle(ref, () => ({
+    refresh: () => onRefreshData?.(selectedTopicId, selectedGrade, selectedClass)
+  }), [onRefreshData, selectedTopicId, selectedGrade, selectedClass]);
 
   // Current topic
   const currentTopic = useMemo(() => {
@@ -350,18 +361,6 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
 
         {/* Actions below description */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            id="btn-all-groups-refresh"
-            onClick={() => onRefreshData?.(selectedTopicId, selectedGrade, selectedClass)}
-            disabled={isLoading || !gasWebAppUrl}
-            title={gasWebAppUrl ? '구글 스프레드시트에서 이 학년/반의 최신 제출 데이터를 다시 불러옵니다.' : 'GAS 연동 URL이 설정되어 있지 않습니다.'}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>{isLoading ? '불러오는 중...' : '새로고침'}</span>
-          </button>
-
           <button
             type="button"
             id="btn-all-groups-csv"
@@ -865,6 +864,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                     // Drop still-blank trailing rows (a student added a row but never
                     // filled it in) - otherwise they show up as an empty measurement slot.
                     const pts = (g?.points || []).filter((p) => p.x !== '' && p.y !== '');
+                    const drawnTrend = computeStudentDrawnTrend(g?.manualGraphData, g?.points || []);
                     return (
                       <tr key={item.groupName} className="hover:bg-slate-50">
                         <td className="p-3 border border-slate-200 text-center font-bold bg-slate-50/50">
@@ -924,8 +924,8 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                             </td>
                           );
                         })}
-                        <td className="p-2.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700">
-                          {g?.selectedTrendline || '-'}
+                        <td className="p-2.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700 font-mono">
+                          {drawnTrend ? drawnTrend.equation : '-'}
                         </td>
                       </tr>
                     );
@@ -1213,4 +1213,4 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
       </div>
     </div>
   );
-};
+});
