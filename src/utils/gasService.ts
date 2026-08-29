@@ -21,7 +21,8 @@ export const DEFAULT_TEACHER_SETTINGS: TeacherSettingsConfig = {
   teacherPassword: '0000',
   allowClassOverview: true,
   allowAutoAnalysis: true,
-  requireGroupPassword: true
+  requireGroupPassword: true,
+  allowMeasurementHint: true
 };
 
 export function serializeReportQuestions(questions?: ReportQuestionConfig[]): string {
@@ -146,7 +147,8 @@ export function getStoredTeacherSettings(): TeacherSettingsConfig {
         teacherPassword: parsed.teacherPassword || DEFAULT_TEACHER_SETTINGS.teacherPassword,
         allowClassOverview: parsed.allowClassOverview !== undefined ? Boolean(parsed.allowClassOverview) : DEFAULT_TEACHER_SETTINGS.allowClassOverview,
         allowAutoAnalysis: parsed.allowAutoAnalysis !== undefined ? Boolean(parsed.allowAutoAnalysis) : DEFAULT_TEACHER_SETTINGS.allowAutoAnalysis,
-        requireGroupPassword: parsed.requireGroupPassword !== undefined ? Boolean(parsed.requireGroupPassword) : DEFAULT_TEACHER_SETTINGS.requireGroupPassword
+        requireGroupPassword: parsed.requireGroupPassword !== undefined ? Boolean(parsed.requireGroupPassword) : DEFAULT_TEACHER_SETTINGS.requireGroupPassword,
+        allowMeasurementHint: parsed.allowMeasurementHint !== undefined ? Boolean(parsed.allowMeasurementHint) : DEFAULT_TEACHER_SETTINGS.allowMeasurementHint
       };
     } catch {
       // ignore
@@ -565,7 +567,8 @@ export async function fetchTeacherSettingsFromGAS(webAppUrl: string): Promise<Te
         teacherPassword: rawTeacherPw || '0000',
         allowClassOverview: data.settings.allowClassOverview !== undefined ? Boolean(data.settings.allowClassOverview) : current.allowClassOverview,
         allowAutoAnalysis: data.settings.allowAutoAnalysis !== undefined ? Boolean(data.settings.allowAutoAnalysis) : current.allowAutoAnalysis,
-        requireGroupPassword: data.settings.requireGroupPassword !== undefined ? Boolean(data.settings.requireGroupPassword) : current.requireGroupPassword
+        requireGroupPassword: data.settings.requireGroupPassword !== undefined ? Boolean(data.settings.requireGroupPassword) : current.requireGroupPassword,
+        allowMeasurementHint: data.settings.allowMeasurementHint !== undefined ? Boolean(data.settings.allowMeasurementHint) : current.allowMeasurementHint
       };
       saveStoredTeacherSettings(updated);
       return updated;
@@ -877,7 +880,8 @@ function getPublicSettings(ss) {
   const settings = {
     allowClassOverview: true,
     allowAutoAnalysis: true,
-    requireGroupPassword: true
+    requireGroupPassword: true,
+    allowMeasurementHint: true
   };
   for (let i = 1; i < values.length; i++) {
     const key = String(values[i][0]).trim();
@@ -888,6 +892,8 @@ function getPublicSettings(ss) {
       settings.allowAutoAnalysis = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
     } else if (key === '모둠_비밀번호_인증_사용' || key === 'requireGroupPassword') {
       settings.requireGroupPassword = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
+    } else if (key === '측정값_힌트_허용' || key === 'allowMeasurementHint') {
+      settings.allowMeasurementHint = String(val).toUpperCase() === 'TRUE' || val === true || val === 1 || String(val) === '1';
     }
   }
   return settings;
@@ -1001,7 +1007,7 @@ function doGet(e) {
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport, TrialIndex, SelectedTrendline]
+      // Row format: [Timestamp, TopicID, Grade, Class, Group, Order, X, Y, Outlier, Note, Summary, Principle, ErrorAnalysis, FullReport, TrialIndex, SelectedTrendline, DrawnTool, DrawnEquation, DrawnCoeffJson]
       if (row[1] == topicId && row[2] == grade && row[3] == classNum) {
         const groupName = String(row[4]);
         const trialIndex = Number(row[14]) || 1;
@@ -1010,6 +1016,37 @@ function doGet(e) {
         const mapKey = groupName + '__' + trialIndex;
         if (!groupMap[mapKey]) {
           let answersMap = {};
+          // 학생이 직접 맞춘 추세선(직선/2차 곡선) 식을 시트에서 복원.
+          // 자유펜/점찍기 모드이거나 아직 맞추지 않은 경우 undefined로 남긴다.
+          let manualGraphData = undefined;
+          const drawnTool = row[16] ? String(row[16]) : '';
+          if (drawnTool === 'line' || drawnTool === 'quadratic') {
+            try {
+              const coeff = row[18] ? JSON.parse(row[18]) : {};
+              if (drawnTool === 'line') {
+                manualGraphData = {
+                  toolMode: 'line',
+                  studentLineEquation: {
+                    slope: Number(coeff.slope) || 0,
+                    intercept: Number(coeff.intercept) || 0,
+                    eqString: String(row[17] || '')
+                  }
+                };
+              } else {
+                manualGraphData = {
+                  toolMode: 'quadratic',
+                  studentQuadraticCurve: {
+                    a: Number(coeff.a) || 0,
+                    b: Number(coeff.b) || 0,
+                    c: Number(coeff.c) || 0,
+                    eqString: String(row[17] || '')
+                  }
+                };
+              }
+            } catch (e) {
+              manualGraphData = undefined;
+            }
+          }
           // 1. N열(row[13])에 전체 문항이 JSON으로 저장되어 있는 경우 전체 파싱
           if (row[13]) {
             try {
@@ -1039,7 +1076,8 @@ function doGet(e) {
               answers: answersMap
             },
             lastSavedAt: String(row[0]),
-            selectedTrendline: row[15] ? String(row[15]) : undefined
+            selectedTrendline: row[15] ? String(row[15]) : undefined,
+            manualGraphData: manualGraphData
           };
         }
 
@@ -1172,6 +1210,9 @@ function doPost(e) {
         }
         if (payload.requireGroupPassword !== undefined) {
           updateOrAppend('모둠_비밀번호_인증_사용', payload.requireGroupPassword ? 'TRUE' : 'FALSE', '학생 입장 시 교사가 배부한 모둠 비밀번호 필수 입력 여부');
+        }
+        if (payload.allowMeasurementHint !== undefined) {
+          updateOrAppend('측정값_힌트_허용', payload.allowMeasurementHint ? 'TRUE' : 'FALSE', '학생 화면 점찍기 모드에서 실제 측정값 힌트 버튼 노출 여부');
         }
       } finally {
         lock.releaseLock();
@@ -1382,6 +1423,32 @@ function doPost(e) {
           fullReportJson = JSON.stringify({ q1: q1, q2: q2, q3: q3 });
         }
 
+        // 학생이 직접 그린 추세선(직선 자/2차 곡선 자로 맞춘 결과)이 있으면 도구 종류,
+        // 식 문자열, 계수(JSON)를 별도 열에 함께 기록한다. 자유펜/점찍기 모드이거나
+        // 아직 맞추지 않은 경우는 빈 값으로 남긴다.
+        const mgd = payload.manualGraphData || {};
+        let drawnTool = '';
+        let drawnEq = '';
+        let drawnCoeffJson = '';
+        if (mgd.toolMode === 'line' && mgd.studentLineEquation) {
+          drawnTool = 'line';
+          drawnEq = mgd.studentLineEquation.eqString || '';
+          drawnCoeffJson = JSON.stringify({
+            slope: mgd.studentLineEquation.slope,
+            intercept: mgd.studentLineEquation.intercept
+          });
+        } else if (mgd.toolMode === 'quadratic' && mgd.studentQuadraticCurve) {
+          drawnTool = 'quadratic';
+          drawnEq = mgd.studentQuadraticCurve.eqString || '';
+          drawnCoeffJson = JSON.stringify({
+            a: mgd.studentQuadraticCurve.a,
+            b: mgd.studentQuadraticCurve.b,
+            c: mgd.studentQuadraticCurve.c
+          });
+        } else if (mgd.toolMode) {
+          drawnTool = String(mgd.toolMode);
+        }
+
         // 점 데이터 기록 (자유 입력 텍스트는 수식 인젝션 방지 처리)
         if (payload.points && payload.points.length > 0) {
           payload.points.forEach((pt, idx) => {
@@ -1402,7 +1469,10 @@ function doPost(e) {
                 sanitizeCell(q3),
                 sanitizeCell(fullReportJson),
                 payloadTrial,
-                sanitizeCell(payload.selectedTrendline || '')
+                sanitizeCell(payload.selectedTrendline || ''),
+                sanitizeCell(drawnTool),
+                sanitizeCell(drawnEq),
+                sanitizeCell(drawnCoeffJson)
               ]);
             }
           });
@@ -1543,6 +1613,7 @@ function ensureConfigSheet(ss) {
     sheet.appendRow(['전체_모둠_데이터_확인_허용', 'TRUE', '학생 화면에서 학급 전체 모둠 데이터 확인 버튼 노출 여부 (TRUE/FALSE)']);
     sheet.appendRow(['컴퓨터_자동_분석_그래프_허용', 'TRUE', '학생 화면에서 컴퓨터 자동 분석 탭 및 최적선 비교 노출 여부 (TRUE/FALSE)']);
     sheet.appendRow(['모둠_비밀번호_인증_사용', 'TRUE', '학생 입장 시 교사가 배부한 모둠 비밀번호 필수 입력 여부 (TRUE/FALSE)']);
+    sheet.appendRow(['측정값_힌트_허용', 'TRUE', '학생 화면 점찍기 모드에서 실제 측정값 힌트 버튼 노출 여부 (TRUE/FALSE)']);
     // B2 셀에 텍스트 서식과 0000 명시적 재할당
     sheet.getRange(2, 2).setNumberFormat('@').setValue('0000');
     sheet.setFrozenRows(1);
@@ -1602,7 +1673,7 @@ function ensureDataSheet(ss) {
       '타임스탬프', '주제ID', '학년', '반', '모둠명', '측정차수',
       '독립변인(X)', '종속변인(Y)', '이상치여부', '측정메모',
       '문항1_답변(자료해석)', '문항2_답변(과학원리)', '문항3_답변(오차분석)', '전체_보고서_통합답변',
-      '시행차수', '선택추세선'
+      '시행차수', '선택추세선', '학생작도_도구', '학생작도_식', '학생작도_계수'
     ]);
     sheet.setFrozenRows(1);
     // Appended as the last columns (O, P) rather than inserted next to 모둠명

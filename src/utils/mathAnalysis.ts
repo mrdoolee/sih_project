@@ -1,4 +1,4 @@
-import { DataPoint, TrendlineResult, TrendlineType, ScientificInsight, TopicConfig } from '../types';
+import { DataPoint, TrendlineResult, TrendlineType, ScientificInsight, TopicConfig, StudentManualGraphData } from '../types';
 
 export interface ValidPoint {
   x: number;
@@ -14,7 +14,7 @@ export function filterValidPoints(points: DataPoint[]): ValidPoint[] {
 }
 
 // Calculate R-squared given actual and predicted values
-function calculateR2(actuals: number[], predicteds: number[]): number {
+export function calculateR2(actuals: number[], predicteds: number[]): number {
   if (actuals.length < 2) return 0;
   const n = actuals.length;
   const meanY = actuals.reduce((acc, v) => acc + v, 0) / n;
@@ -322,6 +322,64 @@ export function computeTrendline(type: TrendlineType, points: DataPoint[]): Tren
     default:
       return calculateLinear(valid);
   }
+}
+
+// The trend a student actually drew by hand (직접 그린 추세선) - built from the
+// fitted line/curve they dragged into place on ManualGraphCanvas, as opposed to
+// computeTrendline() above, which is the computer's own regression (계산된 추세선).
+// Only 'line' and 'quadratic' tool modes produce a fittable equation; 'plot' and
+// 'freehand' modes have no algebraic form, so this returns null for those (and
+// for a 'line'/'quadratic' mode whose equation hasn't been fitted yet).
+export function computeStudentDrawnTrend(
+  manualGraphData: StudentManualGraphData | undefined,
+  points: DataPoint[]
+): TrendlineResult | null {
+  if (!manualGraphData) return null;
+  const valid = filterValidPoints(points);
+
+  if (manualGraphData.toolMode === 'line' && manualGraphData.studentLineEquation) {
+    const { slope, intercept, eqString } = manualGraphData.studentLineEquation;
+    if (typeof slope !== 'number' || typeof intercept !== 'number' || isNaN(slope) || isNaN(intercept)) {
+      return null;
+    }
+    const predict = (x: number) => slope * x + intercept;
+    const r2 = valid.length >= 2 ? calculateR2(valid.map((p) => p.y), valid.map((p) => predict(p.x))) : 0;
+    const sign = intercept >= 0 ? '+' : '-';
+    return {
+      type: 'linear',
+      name: '직접 그린 추세선 (직선 자)',
+      equation: eqString || `y = ${slope.toFixed(3)}x ${sign} ${Math.abs(intercept).toFixed(3)}`,
+      formula: 'y = ax + b',
+      r2: Number(r2.toFixed(4)),
+      slope,
+      intercept,
+      validPointsCount: valid.length,
+      predict
+    };
+  }
+
+  if (manualGraphData.toolMode === 'quadratic' && manualGraphData.studentQuadraticCurve) {
+    const { a, b, c, eqString } = manualGraphData.studentQuadraticCurve;
+    if ([a, b, c].some((v) => typeof v !== 'number' || isNaN(v))) return null;
+    const predict = (x: number) => a * x * x + b * x + c;
+    const r2 = valid.length >= 3 ? calculateR2(valid.map((p) => p.y), valid.map((p) => predict(p.x))) : 0;
+    const bSign = b >= 0 ? '+' : '-';
+    const cSign = c >= 0 ? '+' : '-';
+    return {
+      type: 'quadratic',
+      name: '직접 그린 추세선 (곡선 자)',
+      equation: eqString || `y = ${a.toFixed(3)}x² ${bSign} ${Math.abs(b).toFixed(3)}x ${cSign} ${Math.abs(c).toFixed(3)}`,
+      formula: 'y = ax² + bx + c',
+      r2: Number(r2.toFixed(4)),
+      a,
+      b,
+      c,
+      validPointsCount: valid.length,
+      predict
+    };
+  }
+
+  return null;
 }
 
 // Generate rich educational insight based on data and regression results

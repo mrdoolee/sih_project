@@ -691,6 +691,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTimeout(() => setSyncFeedback(null), 4000);
   };
 
+  const handleToggleMeasurementHint = () => {
+    const updated: TeacherSettingsConfig = {
+      ...teacherSettings,
+      allowMeasurementHint: !teacherSettings.allowMeasurementHint
+    };
+    onSaveTeacherSettings(updated);
+    markPending('settings');
+    setSyncFeedback({
+      type: 'success',
+      message: '설정이 로컬에 변경되었습니다. 스프레드시트에 반영하려면 상단의 [시트로 내보내기] 버튼을 누르세요.'
+    });
+    setTimeout(() => setSyncFeedback(null), 4000);
+  };
+
   // Bulk Generate Random Passwords for Current Selected Topic
   const handleBulkGenerateRandomPasswords = () => {
     const targetTopic = topics.find((t) => t.topicId === pwFilterTopic) || topics[0];
@@ -1893,6 +1907,63 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span className="text-slate-500">시트 [환경설정] 키:</span>
                   <span className="font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
                     모둠_비밀번호_인증_사용: {teacherSettings.requireGroupPassword ? 'TRUE' : 'FALSE'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Feature 4: Measurement Hint Toggle */}
+              <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4 md:col-span-2">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${
+                        teacherSettings.allowMeasurementHint ? 'bg-teal-600' : 'bg-slate-400'
+                      }`}>
+                        <Eye className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">
+                          [측정값 힌트] 기능
+                        </h3>
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                          teacherSettings.allowMeasurementHint
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {teacherSettings.allowMeasurementHint ? '🟢 학생에게 활성화됨' : '⚪ 학생 화면에서 숨김'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Toggle Switch */}
+                    <button
+                      type="button"
+                      id="toggle-measurement-hint"
+                      onClick={handleToggleMeasurementHint}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        teacherSettings.allowMeasurementHint ? 'bg-teal-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          teacherSettings.allowMeasurementHint ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    활성화 시 학생이 <strong>점찍기 모드</strong>에서 <strong>[측정값 힌트]</strong> 버튼을 눌러 표에 입력한 실제 측정값 위치를 흐린 원으로 미리 확인할 수 있습니다.
+                  </p>
+                  <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    💡 <strong>비활성화 시:</strong> 힌트 버튼 자체가 학생 화면에서 사라져, 측정값을 보지 않고 오직 자신의 판단으로 점을 찍어야 합니다.
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                  <span className="text-slate-500">시트 [환경설정] 키:</span>
+                  <span className="font-mono text-teal-700 bg-teal-50 px-2 py-0.5 rounded">
+                    측정값_힌트_허용: {teacherSettings.allowMeasurementHint ? 'TRUE' : 'FALSE'}
                   </span>
                 </div>
               </div>

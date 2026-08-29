@@ -23,6 +23,7 @@ interface ManualGraphCanvasProps {
   manualGraphData?: StudentManualGraphData;
   onChangeManualGraphData?: (data: StudentManualGraphData) => void;
   allowAutoAnalysis?: boolean;
+  allowMeasurementHint?: boolean;
   onSwitchToAuto?: () => void;
   // Which repeated trial (1차, 2차...) is loaded - included so switching trials
   // for the same group/topic re-syncs the canvas the same way switching groups does.
@@ -94,6 +95,7 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
   manualGraphData,
   onChangeManualGraphData,
   allowAutoAnalysis = true,
+  allowMeasurementHint = true,
   onSwitchToAuto,
   trialIndex
 }) => {
@@ -174,6 +176,12 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
   const [showTargetHint, setShowTargetHint] = useState(false);
   const [showAutoTrendHint, setShowAutoTrendHint] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(true);
+
+  // If the teacher turns the hint feature off mid-session, drop any hint
+  // already showing instead of leaving it stuck visible with no way to close it.
+  useEffect(() => {
+    if (!allowMeasurementHint) setShowTargetHint(false);
+  }, [allowMeasurementHint]);
 
   // Dragging state for handles
   const [draggingTarget, setDraggingTarget] = useState<
@@ -752,20 +760,22 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
         <div className="flex items-center flex-wrap gap-1.5 text-xs">
           {toolMode === 'plot' && (
             <>
-              <button
-                type="button"
-                id="btn-hint-toggle"
-                onClick={() => setShowTargetHint(!showTargetHint)}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-colors ${
-                  showTargetHint
-                    ? 'bg-amber-100 border-amber-300 text-amber-900 font-bold'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                }`}
-                title="좌측 표의 실제 측정값 위치를 흐린 원 힌트로 표시합니다."
-              >
-                {showTargetHint ? <Eye className="w-3.5 h-3.5 text-amber-600" /> : <EyeOff className="w-3.5 h-3.5" />}
-                <span>측정값 힌트</span>
-              </button>
+              {allowMeasurementHint && (
+                <button
+                  type="button"
+                  id="btn-hint-toggle"
+                  onClick={() => setShowTargetHint(!showTargetHint)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-colors ${
+                    showTargetHint
+                      ? 'bg-amber-100 border-amber-300 text-amber-900 font-bold'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title="좌측 표의 실제 측정값 위치를 흐린 원 힌트로 표시합니다."
+                >
+                  {showTargetHint ? <Eye className="w-3.5 h-3.5 text-amber-600" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  <span>측정값 힌트</span>
+                </button>
+              )}
 
               {selectedPointId && (
                 <button
@@ -1105,7 +1115,7 @@ export const ManualGraphCanvas: React.FC<ManualGraphCanvasProps> = ({
           </text>
 
           {/* Target Hints */}
-          {showTargetHint &&
+          {allowMeasurementHint && showTargetHint &&
             validPoints.map((vp, idx) => {
               const screen = dataToScreen(vp.x, vp.y);
               const matched = isPointMatched(vp, studentPoints);

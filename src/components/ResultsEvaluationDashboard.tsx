@@ -14,7 +14,7 @@ import {
   getStoredEvaluations
 } from '../utils/gasService';
 import { printElement } from '../utils/printHelper';
-import { computeTrendline, filterValidPoints } from '../utils/mathAnalysis';
+import { computeTrendline, computeStudentDrawnTrend, filterValidPoints } from '../utils/mathAnalysis';
 import {
   Award,
   BookOpen,
@@ -425,6 +425,30 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
     ];
   }, [regressionResult, chartData]);
 
+  // 직접 그린 추세선 (학생이 직선/곡선 자로 맞춘 결과) - 계산된 추세선(regressionResult)과
+  // 별도로 항상 함께 표시한다. 점찍기/자유펜 모드이거나 아직 맞추지 않았다면 null.
+  const drawnTrend = useMemo(() => {
+    return computeStudentDrawnTrend(currentGroupData?.manualGraphData, currentGroupData?.points || []);
+  }, [currentGroupData]);
+
+  const drawnTrendlineData = useMemo(() => {
+    if (!drawnTrend || chartData.length === 0) return [];
+    const xValues = chartData.map((d) => d.x);
+    const minX = Math.min(0, ...xValues);
+    const maxX = Math.max(...xValues) * 1.15;
+    const steps = 30;
+    const stepSize = (maxX - minX) / steps;
+    const rows: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= steps; i++) {
+      const x = minX + i * stepSize;
+      const y = drawnTrend.predict(x);
+      if (y !== null && !isNaN(y) && isFinite(y)) {
+        rows.push({ x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) });
+      }
+    }
+    return rows;
+  }, [drawnTrend, chartData]);
+
   // Print Handlers
   const handlePrintGroupReport = () => {
     printElement('printable-group-evaluation-report', {
@@ -681,13 +705,18 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <TrendingUp className="w-4 h-4 text-indigo-600" />
-                <span>모둠 실험 데이터 그래프 & 회귀선</span>
+                <span>모둠 실험 데이터 그래프 & 추세선</span>
               </h4>
-              {regressionResult && (
-                <div className="text-[11px] font-mono text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 font-semibold">
-                  y = {regressionResult.slope}x {regressionResult.intercept >= 0 ? `+ ${regressionResult.intercept}` : `- ${Math.abs(regressionResult.intercept)}`} (R²={regressionResult.r2})
+              <div className="flex flex-wrap items-center gap-1.5">
+                {regressionResult && (
+                  <div className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-semibold">
+                    계산된 추세선: y = {regressionResult.slope}x {regressionResult.intercept >= 0 ? `+ ${regressionResult.intercept}` : `- ${Math.abs(regressionResult.intercept)}`} (R²={regressionResult.r2})
+                  </div>
+                )}
+                <div className="text-[11px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold">
+                  직접 그린 추세선: {drawnTrend ? `${drawnTrend.equation} (R²=${drawnTrend.r2})` : '없음 (학생이 직선/곡선 자를 맞추지 않음)'}
                 </div>
-              )}
+              </div>
             </div>
 
             {chartData.length > 0 ? (
@@ -789,8 +818,24 @@ export const ResultsEvaluationDashboard: React.FC<ResultsEvaluationDashboardProp
                         type="linear"
                         data={trendlineData}
                         dataKey="y"
+                        name="계산된 추세선"
                         stroke="#10b981"
                         strokeWidth={2.5}
+                        dot={false}
+                        activeDot={false}
+                        isAnimationActive={false}
+                        legendType="none"
+                      />
+                    )}
+                    {drawnTrendlineData.length > 0 && (
+                      <Line
+                        type="monotone"
+                        data={drawnTrendlineData}
+                        dataKey="y"
+                        name="직접 그린 추세선"
+                        stroke="#d97706"
+                        strokeWidth={2.5}
+                        strokeDasharray="6 4"
                         dot={false}
                         activeDot={false}
                         isAnimationActive={false}

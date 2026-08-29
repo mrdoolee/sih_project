@@ -750,6 +750,7 @@ export default function App() {
               manualGraphData={manualGraphData}
               onChangeManualGraphData={handleChangeManualGraphData}
               allowAutoAnalysis={teacherSettings.allowAutoAnalysis}
+              allowMeasurementHint={teacherSettings.allowMeasurementHint}
               trialIndex={selectedTrialIndex}
               onChangeTrendline={(t) => {
                 setSelectedTrendline(t);

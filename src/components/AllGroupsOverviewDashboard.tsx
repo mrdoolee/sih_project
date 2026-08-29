@@ -598,7 +598,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                   <span>{selectedGrade} {selectedClass} · {selectedTrialIndex}차 모둠별 데이터 종합 테이블</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  각 모둠의 측정값(X, Y 쌍), 선택 추세선, 결론 요약 및 채점 상태를 한 번에 검토합니다.
+                  각 모둠의 측정값(X, Y 쌍), 직접 그린 추세선, 결론 요약 및 채점 상태를 한 번에 검토합니다.
                 </p>
                 {totalOutlierCount > 0 && (
                   <p className="text-[11px] font-semibold text-rose-600 mt-1">
@@ -630,7 +630,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                     <th className="py-3 px-4 min-w-[200px]">
                       측정 데이터 ({currentTopic?.xVarName} [{currentTopic?.xUnit}] ➔ {currentTopic?.yVarName} [{currentTopic?.yUnit}])
                     </th>
-                    <th className="py-3 px-3 text-center w-28">선택 추세선</th>
+                    <th className="py-3 px-3 text-center w-28">직접 그린 추세선</th>
                     <th className="py-3 px-4 min-w-[180px]">핵심 결론 요약</th>
                     <th className="py-3 px-4 min-w-[180px]">오차 원인 분석</th>
                     <th className="py-3 px-3 text-center w-24">평가/등급</th>
@@ -855,7 +855,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                       </th>
                     ))}
                     <th className="p-3 border border-slate-200 text-center min-w-[100px]">
-                      추세선
+                      직접 그린 추세선
                     </th>
                   </tr>
                 </thead>
@@ -942,10 +942,10 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                 <BarChart3 className="w-4 h-4 text-indigo-600" />
-                <span>전체 모둠 측정점 및 추세선 겹쳐보기 ({selectedGrade} {selectedClass} · {selectedTrialIndex}차)</span>
+                <span>전체 모둠 측정점 및 계산된 추세선 겹쳐보기 ({selectedGrade} {selectedClass} · {selectedTrialIndex}차)</span>
               </h3>
               <span className="text-xs text-slate-400 whitespace-nowrap">
-                각 모둠별 고유 색상 점과 실선 추세선
+                각 모둠별 고유 색상 점과 계산된 추세선(실선)
               </span>
             </div>
 
@@ -974,7 +974,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
               {totalOutlierCount > 0 && (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-600 whitespace-nowrap">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0 border-2 border-rose-500 bg-white" />
-                  <span>이상치 (추세선 제외)</span>
+                  <span>이상치 (계산된 추세선 제외)</span>
                 </span>
               )}
             </div>
@@ -1105,7 +1105,7 @@ export const AllGroupsOverviewDashboard: React.FC<AllGroupsOverviewDashboardProp
                 fit quality is readable at a glance without hovering the chart. */}
             {activeGroupMetrics.length > 0 && (
               <div className="pt-1 border-t border-slate-100">
-                <h4 className="text-xs font-bold text-slate-700 mb-2.5">모둠별 추세선 · R² 요약</h4>
+                <h4 className="text-xs font-bold text-slate-700 mb-2.5">모둠별 계산된 추세선 · R² 요약</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                   {activeGroupMetrics.map((gm) => (
                     <div

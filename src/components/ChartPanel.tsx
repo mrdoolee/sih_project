@@ -38,6 +38,7 @@ interface ChartPanelProps {
   manualGraphData?: StudentManualGraphData;
   onChangeManualGraphData?: (data: StudentManualGraphData) => void;
   allowAutoAnalysis?: boolean;
+  allowMeasurementHint?: boolean;
   // Which repeated trial (1차, 2차...) is loaded - the manual-drawing canvas
   // needs this to know a trial switch happened even when groupName/topic don't change.
   trialIndex?: number;
@@ -52,6 +53,7 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
   manualGraphData,
   onChangeManualGraphData,
   allowAutoAnalysis = true,
+  allowMeasurementHint = true,
   trialIndex
 }) => {
   // Main view mode: 'manual' (default: student plots and draws ruler) or 'auto' (computer regression analysis)
@@ -171,6 +173,7 @@ export const ChartPanel: React.FC<ChartPanelProps> = ({
             manualGraphData={manualGraphData}
             onChangeManualGraphData={onChangeManualGraphData}
             allowAutoAnalysis={allowAutoAnalysis}
+            allowMeasurementHint={allowMeasurementHint}
             onSwitchToAuto={allowAutoAnalysis ? () => setViewMode('auto') : undefined}
             trialIndex={trialIndex}
           />

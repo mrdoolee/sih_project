@@ -196,4 +196,5 @@ export interface TeacherSettingsConfig {
   allowClassOverview: boolean; // [전체 모둠 데이터 확인] ON/OFF (default: true)
   allowAutoAnalysis: boolean;  // [컴퓨터 자동 분석 그래프] ON/OFF (default: true)
   requireGroupPassword: boolean; // [모둠 비밀번호 인증 사용] ON/OFF (default: true)
+  allowMeasurementHint: boolean; // [측정값 힌트] 점찍기 모드 힌트 버튼 ON/OFF (default: true)
 }

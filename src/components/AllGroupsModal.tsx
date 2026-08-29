@@ -26,7 +26,7 @@ import {
   GroupExperimentData,
   TrendlineType
 } from '../types';
-import { filterValidPoints, computeTrendline } from '../utils/mathAnalysis';
+import { filterValidPoints, computeTrendline, computeStudentDrawnTrend } from '../utils/mathAnalysis';
 
 interface AllGroupsModalProps {
   isOpen: boolean;
@@ -111,14 +111,20 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
     return map;
   }, [groupNames]);
 
-  // Compute trendline and metrics for each group
+  // Compute trendline and metrics for each group. Prefer the trend the student
+  // actually drew by hand (직접 그린 추세선); when they haven't fitted one (plot/
+  // freehand mode, or not yet adjusted), fall back to the computer's own
+  // regression (계산된 추세선) so the overlay always has something to show -
+  // isDrawn distinguishes the two for styling.
   const groupMetrics = useMemo(() => {
     return groupNames.map((gName) => {
       const gData = trialGroupsData.find((d) => d.groupName === gName);
       const points = gData?.points || [];
       const valid = filterValidPoints(points);
       const trendType: TrendlineType = gData?.selectedTrendline || topic.defaultTrendline || 'linear';
-      const trend = computeTrendline(trendType, points);
+      const drawnTrend = computeStudentDrawnTrend(gData?.manualGraphData, points);
+      const computedTrend = computeTrendline(trendType, points);
+      const trend = drawnTrend || computedTrend;
 
       return {
         groupName: gName,
@@ -126,6 +132,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
         validCount: valid.length,
         points: valid,
         trend,
+        isDrawn: !!drawnTrend,
         conclusion: gData?.conclusionNotes?.summary || (gData?.conclusionNotes?.answers ? Object.values(gData.conclusionNotes.answers).filter(Boolean).join(' / ') : '') || '',
         principle: gData?.conclusionNotes?.principle || '',
         lastSavedAt: gData?.lastSavedAt
@@ -342,10 +349,10 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
               <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3 text-xs">
                   <span className="font-bold text-slate-700 whitespace-nowrap">
-                    전체 모둠 측정점 및 추세선 겹쳐보기 (Multi-Series Overlay)
+                    전체 모둠 측정점 및 직접 그린 추세선 겹쳐보기 (Multi-Series Overlay)
                   </span>
                   <span className="text-slate-400 whitespace-nowrap">
-                    각 모둠별 고유 색상 점과 실선 추세선
+                    실선: 직접 그린 추세선 · 점선: 미작성 모둠의 계산된 추세선
                   </span>
                 </div>
 
@@ -456,9 +463,10 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                               <Line
                                 type="monotone"
                                 dataKey={`${gm.groupName}_trend`}
-                                name={`${gm.groupName} 추세`}
+                                name={`${gm.groupName} ${gm.isDrawn ? '직접 그린 추세선' : '계산된 추세선(자동)'}`}
                                 stroke={color}
                                 strokeWidth={2}
+                                strokeDasharray={gm.isDrawn ? undefined : '6 4'}
                                 dot={false}
                                 isAnimationActive={false}
                               />
@@ -507,6 +515,9 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                       </div>
                       {gm.hasData ? (
                         <div className="text-[11px] text-slate-600 space-y-0.5">
+                          <div className={`text-[10px] font-bold ${gm.isDrawn ? 'text-amber-700' : 'text-slate-400'}`}>
+                            {gm.isDrawn ? '직접 그린 추세선' : '계산된 추세선 (미작성)'}
+                          </div>
                           <div>식: <code className="text-indigo-900 font-semibold">{gm.trend.equation}</code></div>
                           <div>R²: <strong className="text-slate-800">{gm.trend.r2}</strong></div>
                         </div>
@@ -605,7 +616,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                   <tr>
                     <th className="py-2.5 px-3">모둠명</th>
                     <th className="py-2.5 px-3 text-center">측정 수</th>
-                    <th className="py-2.5 px-3">추세선 방정식</th>
+                    <th className="py-2.5 px-3">직접 그린 추세선 (미작성 시 계산된 추세선)</th>
                     <th className="py-2.5 px-3 text-center">기울기 (a)</th>
                     <th className="py-2.5 px-3 text-center">결정계수 (R²)</th>
                     <th className="py-2.5 px-3">학생 결론 요약</th>
@@ -627,7 +638,16 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                           {gm.validCount}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-indigo-900 font-medium">
-                          {gm.hasData ? gm.trend.equation : '-'}
+                          {gm.hasData ? (
+                            <>
+                              {gm.trend.equation}
+                              {!gm.isDrawn && (
+                                <span className="ml-1.5 font-sans text-[10px] font-bold text-slate-400">(계산됨)</span>
+                              )}
+                            </>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-center font-semibold">
                           {gm.hasData && gm.trend.slope !== undefined ? gm.trend.slope : '-'}
