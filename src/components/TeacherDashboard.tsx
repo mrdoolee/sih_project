@@ -129,6 +129,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [showChangePw, setShowChangePw] = useState(false);
   const [pwChangeStatus, setPwChangeStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // The password actually confirmed to match the spreadsheet right now - kept
+  // separate from teacherSettings.teacherPassword, which is a locally-editable
+  // draft. Every protected GAS action (saveSettings/saveTopics/saveGroupPassword/
+  // etc.) authenticates with authPassword checked against the SHEET's current
+  // password - if a teacher changes their password locally and then exports
+  // (even a different tab, like topics) before that change itself has reached
+  // the sheet, sending the new unsaved password as the auth token fails against
+  // the sheet's still-old password, silently rejecting the whole export. Using
+  // this tracker (updated only after a push/fetch actually confirms the sheet's
+  // password) avoids that chicken-and-egg auth failure.
+  const [syncedTeacherPassword, setSyncedTeacherPassword] = useState<string>(
+    () => teacherSettings.teacherPassword || '0000'
+  );
+
   // Tab order:
   // 기본 설정 메뉴: 1. GAS연동 ('gas'), 2. 기능제어/환경설정 ('permissions'), 3. 탐구주제/모둠관리 ('topics'), 4. 학생 배부 링크 & QR 생성 ('share')
   // 탐구 결과 확인 메뉴: 5. 전체 모둠 탐구 결과 확인 ('all_groups'), 6. 모둠별 탐구 결과 확인 & 평가 ('evaluations')
@@ -273,6 +287,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const fetched = await fetchTeacherSettingsFromGAS(gasConfig.webAppUrl);
       if (fetched) {
         onSaveTeacherSettings(fetched);
+        setSyncedTeacherPassword(fetched.teacherPassword || '0000');
         clearPending('settings');
         setSyncFeedback({
           type: 'success',
@@ -355,8 +370,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingSettings(true);
     try {
-      const ok = await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      const ok = await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, syncedTeacherPassword);
       if (ok.success) {
+        setSyncedTeacherPassword(teacherSettings.teacherPassword || '0000');
         clearPending('settings');
         setSyncFeedback({
           type: 'success',
@@ -365,7 +381,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       } else {
         setSyncFeedback({
           type: 'error',
-          message: '스프레드시트에 저장하지 못했습니다. Web App 배포 권한을 확인하세요.'
+          message: ok.message || '스프레드시트에 저장하지 못했습니다. Web App 배포 권한을 확인하세요.'
         });
       }
     } catch {
@@ -593,9 +609,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setIsSyncingMaster(true);
     try {
       let successCount = 0;
+      // Read fresh below instead of the syncedTeacherPassword state variable,
+      // which won't reflect the setSyncedTeacherPassword call just below until
+      // the next render - the group-passwords fetch a few lines down needs
+      // whichever password is currently confirmed valid right now.
+      let latestAuthPassword = syncedTeacherPassword;
       const fetchedSettings = await fetchTeacherSettingsFromGAS(gasConfig.webAppUrl);
       if (fetchedSettings) {
         onSaveTeacherSettings(fetchedSettings);
+        latestAuthPassword = fetchedSettings.teacherPassword || '0000';
+        setSyncedTeacherPassword(latestAuthPassword);
         successCount++;
       }
       const fetchedTopics = await fetchTopicsFromGAS(gasConfig.webAppUrl);
@@ -603,7 +626,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         onSaveTopics(fetchedTopics);
         successCount++;
       }
-      const fetchedPasswords = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      const fetchedPasswords = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, latestAuthPassword);
       if (fetchedPasswords) {
         setPasswordsState(fetchedPasswords);
         saveStoredGroupPasswords(fetchedPasswords);
@@ -641,11 +664,40 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingMaster(true);
     try {
-      await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, teacherSettings.teacherPassword);
-      await saveTopicsToGAS(topics, gasConfig.webAppUrl, teacherSettings.teacherPassword);
-      await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      // Every one of these is a protected action authenticated against the
+      // sheet's CURRENT password (syncedTeacherPassword), not whatever's in
+      // the still-unsaved local draft - otherwise a pending password change
+      // makes every other export in this same batch fail auth too. Each
+      // result's .success is checked explicitly instead of assuming the
+      // request landed just because it didn't throw - a rejected/auth-failed
+      // response still resolves normally, it just carries status:'error'.
+      const settingsResult = await saveTeacherSettingsToGAS(teacherSettings, gasConfig.webAppUrl, syncedTeacherPassword);
+      const topicsResult = await saveTopicsToGAS(topics, gasConfig.webAppUrl, syncedTeacherPassword);
+      const passwordsResult = await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, syncedTeacherPassword);
 
-      clearPending('settings'); clearPending('topics'); clearPending('passwords');
+      if (settingsResult.success) {
+        setSyncedTeacherPassword(teacherSettings.teacherPassword || '0000');
+        clearPending('settings');
+      }
+      if (topicsResult.success) clearPending('topics');
+      if (passwordsResult.success) clearPending('passwords');
+
+      const failed = [
+        !settingsResult.success && '환경설정',
+        !topicsResult.success && '탐구주제',
+        !passwordsResult.success && '모둠비밀번호'
+      ].filter(Boolean) as string[];
+
+      if (failed.length > 0) {
+        setMasterSyncFeedback({
+          type: 'error',
+          message: `${failed.join(', ')} 저장에 실패했습니다: ${
+            settingsResult.message || topicsResult.message || passwordsResult.message || '권한 또는 네트워크를 확인하세요.'
+          }`
+        });
+        return;
+      }
+
       setMasterSyncFeedback({
         type: 'success',
         message: '현재 웹의 모든 설정(환경설정, 주제목록, 모둠비밀번호)을 스프레드시트에 성공적으로 내보냈습니다!'
@@ -761,7 +813,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingPasswords(true);
     try {
-      const res = await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      const res = await saveAllGroupPasswordsToGAS(passwordsState, gasConfig.webAppUrl, syncedTeacherPassword);
       if (res.success) {
         clearPending('passwords');
         setPasswordFeedback({
@@ -771,7 +823,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       } else {
         setPasswordFeedback({
           type: 'error',
-          message: '스프레드시트에 비밀번호를 저장하지 못했습니다. 배포 권한을 확인하세요.'
+          message: res.message || '스프레드시트에 비밀번호를 저장하지 못했습니다. 배포 권한을 확인하세요.'
         });
       }
     } catch {
@@ -910,7 +962,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingTopics(true);
     try {
-      const result = await saveTopicsToGAS(topics, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      const result = await saveTopicsToGAS(topics, gasConfig.webAppUrl, syncedTeacherPassword);
       if (result.success) {
         clearPending('topics');
         setTopicSyncFeedback({
@@ -920,7 +972,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       } else {
         setTopicSyncFeedback({
           type: 'error',
-          message: '스프레드시트에 저장하지 못했습니다. Web App 배포 권한을 확인하세요.'
+          message: result.message || '스프레드시트에 저장하지 못했습니다. Web App 배포 권한을 확인하세요.'
         });
       }
     } catch {
@@ -970,7 +1022,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
     setIsSyncingPasswords(true);
     try {
-      const fetched = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, teacherSettings.teacherPassword);
+      const fetched = await fetchGroupPasswordsFromGAS(gasConfig.webAppUrl, syncedTeacherPassword);
       if (fetched) {
         setPasswordsState(fetched);
         clearPending('passwords');
@@ -1020,7 +1072,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleResetGroupPw = (topicId: string, grade: string, classNum: string, groupName: string) => {
-    resetGroupPassword(topicId, grade, classNum, groupName, gasConfig.webAppUrl, teacherSettings.teacherPassword);
+    resetGroupPassword(topicId, grade, classNum, groupName, gasConfig.webAppUrl, syncedTeacherPassword);
     setPasswordsState(getAllGroupPasswords());
     markPending('passwords');
     setPasswordFeedback({
@@ -1039,7 +1091,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setTimeout(() => setPasswordFeedback(null), 3000);
       return;
     }
-    setGroupPassword(topicId, grade, classNum, groupName, newPw.trim(), gasConfig.webAppUrl, teacherSettings.teacherPassword);
+    setGroupPassword(topicId, grade, classNum, groupName, newPw.trim(), gasConfig.webAppUrl, syncedTeacherPassword);
     setPasswordsState(getAllGroupPasswords());
     markPending('passwords');
     setEditingGroupPw(null);
@@ -3300,7 +3352,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             topics={topics}
             allGroupsData={allGroupsData && allGroupsData.length > 0 ? allGroupsData : getFlattenedAllGroupsData()}
             gasWebAppUrl={gasConfig.webAppUrl}
-            teacherPassword={teacherSettings.teacherPassword}
+            teacherPassword={syncedTeacherPassword}
             onRefreshData={onRefreshGroupData}
             isLoading={isRefreshingGroups}
           />
