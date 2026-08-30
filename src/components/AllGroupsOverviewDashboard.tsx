@@ -82,6 +82,13 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
   const [selectedTrialIndex, setSelectedTrialIndex] = useState<number>(1);
   const [viewMode, setViewMode] = useState<'table' | 'matrix' | 'chart' | 'qa'>('table');
   const [searchFilter, setSearchFilter] = useState('');
+  // Per-group show/hide for the class overlay chart (viewMode 'chart') - absent
+  // from the map (the common case) means visible.
+  const [visibleGroups, setVisibleGroups] = useState<Record<string, boolean>>({});
+  const isGroupVisible = (groupName: string) => visibleGroups[groupName] !== false;
+  const toggleGroupVisibility = (groupName: string) => {
+    setVisibleGroups((prev) => ({ ...prev, [groupName]: prev[groupName] === false }));
+  };
 
   useImperativeHandle(ref, () => ({
     refresh: () => onRefreshData?.(selectedTopicId, selectedGrade, selectedClass)
@@ -339,6 +346,10 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
   }, [groupMetrics]);
 
   const activeGroupMetrics = groupMetrics.filter((gm) => gm.hasData);
+  // Legend keeps showing every submitted group (so a hidden one can be turned
+  // back on); the chart itself, its tooltip, and the summary cards only draw
+  // from this narrower, visibility-filtered list.
+  const visibleGroupMetrics = activeGroupMetrics.filter((gm) => isGroupVisible(gm.groupName));
   const totalOutlierCount = groupMetrics.reduce((acc, gm) => acc + gm.outlierCount, 0);
 
   return (
@@ -952,25 +963,36 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
             {/* Custom legend - one badge per group, so it never wraps raggedly.
                 Includes the trendline equation and R² inline so the fit
                 quality is readable straight off the legend, not just from
-                the summary box below the chart. */}
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
-              {activeGroupMetrics.map((gm) => (
-                <span
-                  key={gm.groupName}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700 whitespace-nowrap"
-                >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: gm.color }} />
-                  <span>
-                    {gm.groupName} ({gm.validCount}점
-                    {gm.outlierCount > 0 && (
-                      <span className="text-rose-600"> · 이상치 {gm.outlierCount}</span>
-                    )}
-                    )
-                  </span>
-                  <span className="font-mono font-semibold text-indigo-700">{gm.trend.equation}</span>
-                  <span className="text-slate-500 font-normal">R²={gm.trend.r2}</span>
-                </span>
-              ))}
+                the summary box below the chart. Also doubles as the show/hide
+                control for that group's points and trendline in the chart. */}
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5">
+              {activeGroupMetrics.map((gm) => {
+                const visible = isGroupVisible(gm.groupName);
+                return (
+                  <button
+                    key={gm.groupName}
+                    type="button"
+                    onClick={() => toggleGroupVisibility(gm.groupName)}
+                    className={`inline-flex items-center gap-1.5 text-[11px] font-bold whitespace-nowrap px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                      visible
+                        ? 'text-slate-700 bg-white border-slate-200 hover:border-slate-300'
+                        : 'text-slate-400 bg-slate-100 border-slate-200 line-through decoration-slate-400'
+                    }`}
+                    title={visible ? `${gm.groupName} 숨기기` : `${gm.groupName} 표시하기`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: visible ? gm.color : '#cbd5e1' }} />
+                    <span>
+                      {gm.groupName} ({gm.validCount}점
+                      {gm.outlierCount > 0 && (
+                        <span className="text-rose-600"> · 이상치 {gm.outlierCount}</span>
+                      )}
+                      )
+                    </span>
+                    <span className="font-mono font-semibold text-indigo-700">{gm.trend.equation}</span>
+                    <span className="text-slate-500 font-normal">R²={gm.trend.r2}</span>
+                  </button>
+                );
+              })}
               {totalOutlierCount > 0 && (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-600 whitespace-nowrap">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0 border-2 border-rose-500 bg-white" />
@@ -1022,7 +1044,7 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
 
                         // Only measured points get a tooltip; the sampled trendline
                         // rows carry no student-entered value worth showing.
-                        const measured = activeGroupMetrics
+                        const measured = visibleGroupMetrics
                           .map((gm) => ({
                             gm,
                             actual: item[`${gm.groupName}_actual`],
@@ -1060,7 +1082,7 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
                     <ReferenceLine x={0} stroke="#cbd5e1" />
                     <ReferenceLine y={0} stroke="#cbd5e1" />
 
-                    {activeGroupMetrics.map((gm) => (
+                    {visibleGroupMetrics.map((gm) => (
                       <React.Fragment key={gm.groupName}>
                         <Line
                           type="monotone"
@@ -1110,7 +1132,11 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
                   {activeGroupMetrics.map((gm) => (
                     <div
                       key={gm.groupName}
-                      className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 flex flex-col gap-1 text-xs"
+                      onClick={() => toggleGroupVisibility(gm.groupName)}
+                      title={isGroupVisible(gm.groupName) ? `${gm.groupName} 숨기기` : `${gm.groupName} 표시하기`}
+                      className={`p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 flex flex-col gap-1 text-xs cursor-pointer transition-opacity ${
+                        isGroupVisible(gm.groupName) ? '' : 'opacity-40'
+                      }`}
                     >
                       <div className="flex items-center gap-1.5 font-bold">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: gm.color }} />

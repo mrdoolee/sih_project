@@ -63,7 +63,13 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
   isRefreshing
 }) => {
   const [activeTab, setActiveTab] = useState<'chart' | 'table'>('chart');
+  // Per-group show/hide for the overlay chart - absent from the map (the
+  // common case) means visible, so newly-submitted groups default to shown.
   const [visibleGroups, setVisibleGroups] = useState<Record<string, boolean>>({});
+  const isGroupVisible = (groupName: string) => visibleGroups[groupName] !== false;
+  const toggleGroupVisibility = (groupName: string) => {
+    setVisibleGroups((prev) => ({ ...prev, [groupName]: prev[groupName] === false }));
+  };
 
   // Which repeated trial (1차, 2차...) is being compared across groups. Every
   // group can submit multiple trials, so without this the modal used to pick
@@ -207,20 +213,21 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
     };
   }, [groupMetrics]);
 
-  // Overall class averages
+  // Overall class averages - only over groups currently shown, so hiding a
+  // group's outlier trend actually moves the average instead of just the chart.
   const classAvgSlope = useMemo(() => {
-    const validTrends = groupMetrics.filter((g) => g.hasData && g.trend.slope !== undefined);
+    const validTrends = groupMetrics.filter((g) => g.hasData && isGroupVisible(g.groupName) && g.trend.slope !== undefined);
     if (validTrends.length === 0) return null;
     const sum = validTrends.reduce((acc, g) => acc + (g.trend.slope || 0), 0);
     return (sum / validTrends.length).toFixed(3);
-  }, [groupMetrics]);
+  }, [groupMetrics, visibleGroups]);
 
   const classAvgR2 = useMemo(() => {
-    const validTrends = groupMetrics.filter((g) => g.hasData);
+    const validTrends = groupMetrics.filter((g) => g.hasData && isGroupVisible(g.groupName));
     if (validTrends.length === 0) return null;
     const sum = validTrends.reduce((acc, g) => acc + g.trend.r2, 0);
     return (sum / validTrends.length).toFixed(4);
-  }, [groupMetrics]);
+  }, [groupMetrics, visibleGroups]);
 
   if (!isOpen) return null;
 
@@ -357,22 +364,34 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                 </div>
 
                 {/* Custom legend: recharts' own legend emitted two ragged rows
-                    (점 + 추세 per group), so one badge per group is used. */}
-                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 mb-3">
+                    (점 + 추세 per group), so one badge per group is used.
+                    Doubles as the show/hide control for that group's points
+                    and trendline in the chart below. */}
+                <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 mb-3">
                   {groupMetrics
                     .filter((gm) => gm.hasData)
-                    .map((gm) => (
-                      <span
-                        key={gm.groupName}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700 whitespace-nowrap"
-                      >
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: colorMap[gm.groupName] }}
-                        />
-                        <span>{gm.groupName}</span>
-                      </span>
-                    ))}
+                    .map((gm) => {
+                      const visible = isGroupVisible(gm.groupName);
+                      return (
+                        <button
+                          key={gm.groupName}
+                          type="button"
+                          onClick={() => toggleGroupVisibility(gm.groupName)}
+                          className={`inline-flex items-center gap-1.5 text-[11px] font-bold whitespace-nowrap px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                            visible
+                              ? 'text-slate-700 bg-white border-slate-200 hover:border-slate-300'
+                              : 'text-slate-400 bg-slate-100 border-slate-200 line-through decoration-slate-400'
+                          }`}
+                          title={visible ? `${gm.groupName} 숨기기` : `${gm.groupName} 표시하기`}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: visible ? colorMap[gm.groupName] : '#cbd5e1' }}
+                          />
+                          <span>{gm.groupName}</span>
+                        </button>
+                      );
+                    })}
                 </div>
 
                 <div className="h-[360px] w-full">
@@ -427,6 +446,7 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                             // Only surface real measured points - trendline values are
                             // intentionally omitted so hovering the curve shows nothing.
                             const measured = groupMetrics
+                              .filter((gm) => isGroupVisible(gm.groupName))
                               .map((gm) => ({ gm, actual: item[`${gm.groupName}_actual`] }))
                               .filter((entry) => entry.actual !== undefined && entry.actual !== null);
 
@@ -454,9 +474,9 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
                         <ReferenceLine x={0} stroke="#cbd5e1" />
                         <ReferenceLine y={0} stroke="#cbd5e1" />
 
-                        {/* Render Lines & Scatters for each group */}
+                        {/* Render Lines & Scatters for each group (skipping any toggled off via the legend above) */}
                         {groupMetrics.map((gm) => {
-                          if (!gm.hasData) return null;
+                          if (!gm.hasData || !isGroupVisible(gm.groupName)) return null;
                           const color = colorMap[gm.groupName];
                           return (
                             <React.Fragment key={gm.groupName}>
@@ -490,10 +510,15 @@ export const AllGroupsModal: React.FC<AllGroupsModalProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                 {groupMetrics.map((gm) => {
                   const color = colorMap[gm.groupName];
+                  const visible = isGroupVisible(gm.groupName);
                   return (
                     <div
                       key={gm.groupName}
-                      className="p-2.5 rounded-lg border border-slate-200 bg-white flex flex-col justify-between text-xs"
+                      onClick={gm.hasData ? () => toggleGroupVisibility(gm.groupName) : undefined}
+                      title={gm.hasData ? (visible ? `${gm.groupName} 숨기기` : `${gm.groupName} 표시하기`) : undefined}
+                      className={`p-2.5 rounded-lg border flex flex-col justify-between text-xs transition-opacity ${
+                        gm.hasData ? 'cursor-pointer border-slate-200 bg-white' : 'border-slate-200 bg-white'
+                      } ${gm.hasData && !visible ? 'opacity-40' : ''}`}
                     >
                       <div className="flex items-center justify-between gap-1.5 mb-1">
                         <div className="flex items-center gap-1.5 font-bold">
