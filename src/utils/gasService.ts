@@ -17,6 +17,10 @@ const TEACHER_SETTINGS_KEY = 'science_lab_teacher_settings';
 const GROUP_PASSWORDS_KEY = 'science_lab_group_passwords';
 const GROUP_EVALUATIONS_KEY = 'science_lab_group_evaluations';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const DEFAULT_TEACHER_SETTINGS: TeacherSettingsConfig = {
   teacherPassword: '0000',
   allowClassOverview: true,
@@ -758,31 +762,52 @@ export async function saveGroupData(
 
   // 3. If GAS Web App URL is provided, push to Google Sheets
   if (webAppUrl && webAppUrl.startsWith('http')) {
-    try {
-      const response = await fetch(webAppUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // text/plain avoids CORS preflight issues with GAS
-        body: JSON.stringify({
-          action: 'saveGroupData',
-          payload: updatedData
-        })
-      });
+    // Spread out simultaneous submissions - e.g. a teacher saying "다들 지금
+    // 저장 누르세요" can land 20-30 groups' requests on the GAS script-wide
+    // lock (see LockService.getScriptLock() in getGASCodeTemplate()) in the
+    // same instant, so a bit of jitter before even the first attempt lowers
+    // how many pile up waiting on that lock at once.
+    await sleep(Math.random() * 300);
 
-      if (!response.ok) {
-        throw new Error(`GAS Server Error (${response.status})`);
+    const maxAttempts = 3;
+    let lastMessage = '스프레드시트 저장에 실패했습니다.';
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch(webAppUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // text/plain avoids CORS preflight issues with GAS
+          body: JSON.stringify({
+            action: 'saveGroupData',
+            payload: updatedData
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`GAS Server Error (${response.status})`);
+        }
+        const resultData = await response.json().catch(() => null);
+        if (resultData && resultData.status === 'error') {
+          throw new Error(resultData.message || lastMessage);
+        }
+        return { success: true, message: '구글 스프레드시트 및 로컬 저장소에 성공적으로 동기화되었습니다.' };
+      } catch (err: any) {
+        lastMessage = err?.message || lastMessage;
+        console.warn(`GAS saveGroupData attempt ${attempt}/${maxAttempts} failed:`, err);
+        // The server deletes then re-appends this exact (topic, grade, class,
+        // group, trial)'s rows from the payload every time - re-sending the
+        // same payload lands in the same end state whether it's the 1st or
+        // 3rd attempt, so a blind retry here can't duplicate or corrupt data.
+        // A lock-contention failure (many groups saving at once) is exactly
+        // the case a short backoff resolves on its own.
+        if (attempt < maxAttempts) {
+          await sleep(500 * attempt + Math.random() * 400);
+        }
       }
-      const resultData = await response.json().catch(() => null);
-      if (resultData && resultData.status === 'error') {
-        return { success: false, message: resultData.message || '스프레드시트 저장에 실패했습니다.' };
-      }
-      return { success: true, message: '구글 스프레드시트 및 로컬 저장소에 성공적으로 동기화되었습니다.' };
-    } catch (err: any) {
-      console.warn('GAS Save failed, saved locally:', err);
-      return {
-        success: false,
-        message: '로컬에는 저장되었지만 구글 시트 동기화에 실패했습니다 (네트워크 확인 후 다시 저장해주세요).'
-      };
     }
+    return {
+      success: false,
+      message: `로컬에는 저장되었지만 ${maxAttempts}번 재시도 후에도 구글 시트 동기화에 실패했습니다 (${lastMessage}). 네트워크 확인 후 다시 저장해주세요.`
+    };
   }
 
   return { success: true, message: '로컬 저장소에 안전하게 저장되었습니다.' };

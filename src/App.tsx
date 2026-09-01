@@ -87,6 +87,17 @@ export default function App() {
   const [gasConfig, setGASConfig] = useState<GASConfig>(() => getStoredGASConfig());
   const [teacherSettings, setTeacherSettings] = useState<TeacherSettingsConfig>(() => getStoredTeacherSettings());
 
+  // True only when a brand-new device (no localStorage cache) opens a
+  // distribution link that carries a GAS URL - `topics` above is still the
+  // hardcoded DEFAULT_TOPICS (EXP_01..04) sample set at this point, and would
+  // otherwise flash on screen until the fetch below replaces it. Gated off
+  // as soon as that fetch settles (success or failure) in the effect below.
+  const [isBootstrappingTopics, setIsBootstrappingTopics] = useState<boolean>(() => {
+    const params = parseDistributionParams();
+    const effectiveUrl = params.gasUrl || getStoredGASConfig().webAppUrl;
+    return !!(params.hasDistributionParams && effectiveUrl);
+  });
+
   // Active selections
   const [selectedTopicId, setSelectedTopicId] = useState<string>(() => topics[0]?.topicId || 'EXP_01');
   
@@ -427,6 +438,19 @@ export default function App() {
       // link won't match anything in `topics` and the app silently falls
       // back to topics[0] (the old sample EXP_01 experiment).
       if (effectiveGasUrl) {
+        // Neither fetch below has a built-in timeout, so on genuinely dead
+        // wifi (connection hangs instead of erroring) the loading gate could
+        // otherwise sit open forever. Force it closed after a few seconds
+        // regardless - falling back to cached/default topics is far better
+        // than a student staring at a permanent spinner.
+        let settled = false;
+        const forceClearTimer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            setIsBootstrappingTopics(false);
+          }
+        }, 8000);
+
         (async () => {
           try {
             const [fetchedTopics, fetchedSettings] = await Promise.all([
@@ -443,9 +467,22 @@ export default function App() {
             }
           } catch {
             // best-effort; fall back to cached/default topics on failure
+          } finally {
+            // Whether the fetch above succeeded or failed, there's nothing
+            // more to wait for - either the real topics arrived, or they
+            // didn't and the cached/default list is the best we've got.
+            if (!settled) {
+              settled = true;
+              clearTimeout(forceClearTimer);
+              setIsBootstrappingTopics(false);
+            }
           }
         })();
+      } else {
+        setIsBootstrappingTopics(false);
       }
+    } else {
+      setIsBootstrappingTopics(false);
     }
   }, []);
 
@@ -634,6 +671,21 @@ export default function App() {
           window.history.replaceState({}, '', `${window.location.pathname}?mode=student`);
         }}
       />
+    );
+  }
+
+  // On a brand-new device opening a distribution link, hold here instead of
+  // flashing the hardcoded DEFAULT_TOPICS (EXP_01..04) sample list while the
+  // teacher's real topics are still in flight - see isBootstrappingTopics above.
+  if (isBootstrappingTopics) {
+    return (
+      <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-indigo-950 flex flex-col items-center justify-center text-slate-100 px-4">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+          <p className="text-sm font-semibold text-slate-200">선생님이 등록한 최신 탐구 주제를 불러오는 중...</p>
+          <p className="text-xs text-slate-400">잠시만 기다려주세요</p>
+        </div>
+      </div>
     );
   }
 
