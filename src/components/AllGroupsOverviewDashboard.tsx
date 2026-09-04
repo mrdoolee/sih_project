@@ -6,7 +6,7 @@ import {
   DataPoint,
   getEffectiveReportQuestions
 } from '../types';
-import { getStoredEvaluations } from '../utils/gasService';
+import { getStoredEvaluations, fetchEvaluationsFromGAS } from '../utils/gasService';
 import { printElement } from '../utils/printHelper';
 import {
   Table,
@@ -92,8 +92,18 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
   };
 
   useImperativeHandle(ref, () => ({
-    refresh: () => onRefreshData?.(selectedTopicId, selectedGrade, selectedClass)
-  }), [onRefreshData, selectedTopicId, selectedGrade, selectedClass]);
+    refresh: () => {
+      // This table's own 평가/등급 column reads from evaluations, but this
+      // used to only re-fetch group measurement data - a stale grade left
+      // over from a previously-connected sheet (or earlier testing) could
+      // sit here forever because nothing on this tab ever asked the sheet
+      // for the current evaluation list. fetchEvaluationsFromGAS updates the
+      // shared local cache and fires the event this component already
+      // listens for, so the table picks up the result without extra wiring.
+      onRefreshData?.(selectedTopicId, selectedGrade, selectedClass);
+      if (gasWebAppUrl) fetchEvaluationsFromGAS(gasWebAppUrl);
+    }
+  }), [onRefreshData, selectedTopicId, selectedGrade, selectedClass, gasWebAppUrl]);
 
   // Current topic
   const currentTopic = useMemo(() => {

@@ -71,7 +71,8 @@ import {
   generateBulkGroupPasswords,
   clearAllGroupPasswords,
   getFlattenedAllGroupsData,
-  verifyTeacherPasswordOnGAS
+  verifyTeacherPasswordOnGAS,
+  fetchEvaluationsFromGAS
 } from '../utils/gasService';
 import { GroupPasswordPrintModal } from './GroupPasswordPrintModal';
 import { ClassroomShareModal } from './ClassroomShareModal';
@@ -630,6 +631,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       if (fetchedPasswords) {
         setPasswordsState(fetchedPasswords);
         saveStoredGroupPasswords(fetchedPasswords);
+        successCount++;
+      }
+      // "전체 불러오기" implies everything, but evaluations used to be left out
+      // entirely - menu5/6's grade column only ever updated via menu6's own
+      // refresh, so a stale grade from a previously-connected sheet survived
+      // this "sync everything" button untouched. fetchEvaluationsFromGAS
+      // updates the shared cache and fires the event both dashboards listen
+      // for, so no further wiring is needed here beyond calling it.
+      const fetchedEvaluations = await fetchEvaluationsFromGAS(gasConfig.webAppUrl);
+      if (fetchedEvaluations) {
         successCount++;
       }
       if (onSyncFromGAS) {
