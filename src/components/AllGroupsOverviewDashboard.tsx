@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, forwardRef, useImperativeHandle } 
 import {
   TopicConfig,
   GroupExperimentData,
+  GroupEvaluation,
   DataPoint,
   getEffectiveReportQuestions
 } from '../types';
@@ -120,8 +121,20 @@ export const AllGroupsOverviewDashboard = forwardRef<AllGroupsOverviewDashboardH
     }
   }, [currentTopic]);
 
-  // Current stored evaluations
-  const evaluations = useMemo(() => getStoredEvaluations(), []);
+  // Current stored evaluations - kept live via the same custom event
+  // ResultsEvaluationDashboard dispatches after a save or a sheet fetch, so a
+  // grade entered (or a stale one cleared) in menu6 shows up here without
+  // needing to leave and reopen this tab. A one-time useMemo used to leave
+  // this frozen at whatever localStorage held on first mount.
+  const [evaluations, setEvaluations] = useState<Record<string, GroupEvaluation>>(() => getStoredEvaluations());
+  useEffect(() => {
+    const handleUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) setEvaluations(detail);
+    };
+    window.addEventListener('science_lab_evaluations_updated', handleUpdated);
+    return () => window.removeEventListener('science_lab_evaluations_updated', handleUpdated);
+  }, []);
 
   // Report questions actually configured for this topic (falls back to the 3 defaults)
   const reportQuestions = useMemo(() => {

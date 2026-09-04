@@ -354,10 +354,18 @@ export async function fetchEvaluationsFromGAS(webAppUrl: string): Promise<Record
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (data.status === 'success' && data.evaluations) {
-      const current = getStoredEvaluations();
-      const merged = { ...current, ...data.evaluations };
-      localStorage.setItem(GROUP_EVALUATIONS_KEY, JSON.stringify(merged));
-      return merged;
+      // getEvaluations returns the sheet's ENTIRE 평가_피드백 tab, not a partial
+      // slice - it's the full current truth, so the fetch result replaces the
+      // local cache outright. Merging it on top of the old cache (as this used
+      // to do) meant a group evaluation from a previously-connected sheet (or
+      // an earlier test) could never be cleared by switching to a new, blank
+      // spreadsheet - it would just sit there forever looking like a real grade.
+      localStorage.setItem(GROUP_EVALUATIONS_KEY, JSON.stringify(data.evaluations));
+      // Same event saveStoredEvaluation() fires on a single-group save, so
+      // every component showing evaluations (menu5's table, menu6 itself)
+      // stays in sync with a bulk sheet fetch too, not just individual saves.
+      window.dispatchEvent(new CustomEvent('science_lab_evaluations_updated', { detail: data.evaluations }));
+      return data.evaluations;
     }
     return null;
   } catch (err) {
@@ -537,10 +545,28 @@ export async function fetchGroupPasswordsFromGAS(webAppUrl: string, authPassword
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (data.status === 'success' && data.passwords) {
-      const current = getStoredGroupPasswords();
-      const merged = { ...current, ...data.passwords };
-      saveStoredGroupPasswords(merged);
-      return merged;
+      // If the authPassword we sent no longer matches the sheet's actual
+      // teacher password (e.g. a locally-changed-but-not-yet-exported
+      // password), the server can't recognize us as the teacher and masks
+      // every value as the literal string '(설정됨)' instead of a real
+      // password. Overwriting the local password store with those
+      // placeholders would silently break every student's login on this
+      // browser, so detect an all-masked response and leave the cache alone
+      // instead. (The one case this also skips - a teacher who intentionally
+      // clears every single group's password to blank - is harmless to miss:
+      // the stale cached passwords just keep working a little longer.)
+      const values = Object.values(data.passwords);
+      const looksMasked = !!authPassword && values.length > 0 && values.every((v) => v === '' || v === '(설정됨)');
+      if (looksMasked) {
+        console.warn('fetchGroupPasswordsFromGAS: response looks masked (teacher auth mismatch?) - local password cache left untouched.');
+        return null;
+      }
+      // getGroupPasswords returns the sheet's ENTIRE password list, not a
+      // partial slice, so it fully replaces the local cache instead of
+      // merging on top of it - otherwise a password from a previously
+      // connected sheet could never be cleared by switching to a new one.
+      saveStoredGroupPasswords(data.passwords);
+      return data.passwords;
     }
     return null;
   } catch (err) {
